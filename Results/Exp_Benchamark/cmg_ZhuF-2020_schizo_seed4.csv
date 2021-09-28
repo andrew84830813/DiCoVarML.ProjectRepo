@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,1,SELBAL,0.6655555555555556,16,1,139.678,190
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,1,CLR-LASSO,0.6677777777777778,13,13,0.4679999999999893,190
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,1,Coda-LASSO,0.7055555555555556,43,1,140.907,190
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,2,DCV-ridgeRegression,0.7888888888888889,142,3846,1140.113,190
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,2,DCV-ridgeEnsemble,0.8005555555555556,142,3846,1140.113,190
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,2,SELBAL,0.6422764227642277,13,1,118.41300000000001,183
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,2,CLR-LASSO,0.7002710027100271,25,25,0.21499999999991815,183
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,2,Coda-LASSO,0.6498644986449864,164,1,43.17900000000009,183
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,2,DCV-ridgeRegression,0.7094850948509486,137,3440,560.2130000000004,183
+Empirical,cmg_ZhuF-2020_schizo_seed4,4,2,DCV-ridgeEnsemble,0.7447154471544716,137,3440,560.2130000000004,183

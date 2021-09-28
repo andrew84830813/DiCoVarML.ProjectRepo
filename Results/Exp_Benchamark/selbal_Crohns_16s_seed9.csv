@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims
+Empirical,selbal_Crohns_16s_seed9,9,1,SELBAL,0.8058469308469308,21,1,34.574999999999996,48
+Empirical,selbal_Crohns_16s_seed9,9,1,CLR-LASSO,0.8277972027972028,23,23,0.7269999999999968,48
+Empirical,selbal_Crohns_16s_seed9,9,1,Coda-LASSO,0.7943667443667444,14,1,203.92000000000002,48
+Empirical,selbal_Crohns_16s_seed9,9,2,DCV-ridgeRegression,0.8024087024087024,36,288,557.946,48
+Empirical,selbal_Crohns_16s_seed9,9,2,DCV-ridgeEnsemble,0.8431429681429682,36,288,557.946,48
+Empirical,selbal_Crohns_16s_seed9,9,2,SELBAL,0.8221056721056721,24,1,35.153999999999996,48
+Empirical,selbal_Crohns_16s_seed9,9,2,CLR-LASSO,0.8246891996891997,33,33,0.6199999999998909,48
+Empirical,selbal_Crohns_16s_seed9,9,2,Coda-LASSO,0.7791763791763792,10,1,184.04499999999996,48
+Empirical,selbal_Crohns_16s_seed9,9,2,DCV-ridgeRegression,0.8087801087801088,36,284,490.20600000000013,48
+Empirical,selbal_Crohns_16s_seed9,9,2,DCV-ridgeEnsemble,0.8422688422688422,36,284,490.20600000000013,48

@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,1,SELBAL,0.9158667419536984,13,1,69.873,86
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,1,CLR-LASSO,0.9796725014116319,27,27,0.4409999999999883,86
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,1,Coda-LASSO,0.9520045172219085,5,1,39.45100000000001,86
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,2,DCV-ridgeRegression,0.9856013551665725,17,68,418.736,86
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,2,DCV-ridgeEnsemble,0.9830604178430266,17,68,418.736,86
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,2,SELBAL,0.944045316385742,10,1,63.50800000000004,87
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,2,CLR-LASSO,0.9867366675877314,15,15,0.31100000000003547,87
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,2,Coda-LASSO,0.9731970157502072,5,1,45.333999999999946,87
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,2,DCV-ridgeRegression,0.9765128488532744,17,73,417.1880000000001,87
+Empirical,mbiomeHD_cdiSchubert_16s_seed11,11,2,DCV-ridgeEnsemble,0.9759602100027632,17,73,417.1880000000001,87

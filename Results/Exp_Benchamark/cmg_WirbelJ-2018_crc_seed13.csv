@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,1,SELBAL,0.7385416666666667,15,1,192,223
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,1,CLR-LASSO,0.8197916666666667,5,5,0.4119999999999777,223
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,1,Coda-LASSO,0.7817708333333333,134,1,86.529,223
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,2,DCV-ridgeRegression,0.846875,126,3236,1415.373,223
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,2,DCV-ridgeEnsemble,0.8729166666666667,126,3236,1415.373,223
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,2,SELBAL,0.603030303030303,10,1,180.231,229
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,2,CLR-LASSO,0.7747474747474747,14,14,0.30300000000011096,229
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,2,Coda-LASSO,0.7555555555555556,125,1,50.75799999999981,229
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,2,DCV-ridgeRegression,0.8030303030303031,172,5861,1544.8849999999995,229
+Empirical,cmg_WirbelJ-2018_crc_seed13,13,2,DCV-ridgeEnsemble,0.8303030303030303,172,5861,1544.8849999999995,229

@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,1,SELBAL,0.8198561464690497,16,1,216.613,213
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,1,CLR-LASSO,0.8736922406277245,54,54,0.785000000000025,213
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,1,Coda-LASSO,0.8660636442894507,47,1,269.888,213
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,2,DCV-ridgeRegression,0.9068221447253705,160,5055,1791.9519999999998,213
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,2,DCV-ridgeEnsemble,0.9078029642545772,160,5055,1791.9519999999998,213
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,2,SELBAL,0.8063426329555362,12,1,168.4340000000002,199
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,2,CLR-LASSO,0.834895379250218,47,47,0.6209999999996398,199
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,2,Coda-LASSO,0.8231255448997384,52,1,222.42700000000013,199
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,2,DCV-ridgeRegression,0.841870095902354,112,2898,1433.498,199
+Empirical,cmg_NielsenHB-2014_ibd_seed6,6,2,DCV-ridgeEnsemble,0.8598517872711421,112,2898,1433.498,199

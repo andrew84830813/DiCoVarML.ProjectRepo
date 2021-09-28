@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims
+Empirical,selbal_HIV_16s_seed7,7,1,SELBAL,0.6742788461538461,9,1,19.776000000000003,59
+Empirical,selbal_HIV_16s_seed7,7,1,CLR-LASSO,0.5,0,0,0.4710000000000001,59
+Empirical,selbal_HIV_16s_seed7,7,1,Coda-LASSO,0.7596153846153847,16,1,55.655,59
+Empirical,selbal_HIV_16s_seed7,7,2,DCV-ridgeRegression,0.7740384615384616,12,34,310.74199999999996,59
+Empirical,selbal_HIV_16s_seed7,7,2,DCV-ridgeEnsemble,0.7427884615384616,12,34,310.74199999999996,59
+Empirical,selbal_HIV_16s_seed7,7,2,SELBAL,0.61328125,15,1,27.211000000000013,60
+Empirical,selbal_HIV_16s_seed7,7,2,CLR-LASSO,0.6517857142857143,3,3,0.39800000000002456,60
+Empirical,selbal_HIV_16s_seed7,7,2,Coda-LASSO,0.6808035714285714,7,1,49.69499999999999,60
+Empirical,selbal_HIV_16s_seed7,7,2,DCV-ridgeRegression,0.7042410714285714,12,33,310.10999999999996,60
+Empirical,selbal_HIV_16s_seed7,7,2,DCV-ridgeEnsemble,0.734375,12,33,310.10999999999996,60

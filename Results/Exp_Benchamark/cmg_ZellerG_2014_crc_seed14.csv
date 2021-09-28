@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims
+Empirical,cmg_ZellerG_2014_crc_seed14,14,1,SELBAL,0.6134615384615385,3,1,204.042,265
+Empirical,cmg_ZellerG_2014_crc_seed14,14,1,CLR-LASSO,0.6782051282051282,8,8,0.37300000000001887,265
+Empirical,cmg_ZellerG_2014_crc_seed14,14,1,Coda-LASSO,0.6538461538461537,168,1,42.18799999999999,265
+Empirical,cmg_ZellerG_2014_crc_seed14,14,2,DCV-ridgeRegression,0.7884615384615384,150,4232,1520.652,265
+Empirical,cmg_ZellerG_2014_crc_seed14,14,2,DCV-ridgeEnsemble,0.7794871794871795,150,4232,1520.652,265
+Empirical,cmg_ZellerG_2014_crc_seed14,14,2,SELBAL,0.7628205128205129,8,1,220.10300000000007,268
+Empirical,cmg_ZellerG_2014_crc_seed14,14,2,CLR-LASSO,0.7474358974358974,16,16,0.27700000000004366,268
+Empirical,cmg_ZellerG_2014_crc_seed14,14,2,Coda-LASSO,0.7064102564102563,211,1,46.36999999999989,268
+Empirical,cmg_ZellerG_2014_crc_seed14,14,2,DCV-ridgeRegression,0.75,101,2060,1127.415,268
+Empirical,cmg_ZellerG_2014_crc_seed14,14,2,DCV-ridgeEnsemble,0.7615384615384615,101,2060,1127.415,268

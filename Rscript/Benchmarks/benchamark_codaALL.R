@@ -51,15 +51,15 @@ permute_labels = as.logical(as.numeric(args[3])) #should be 0(False) or 1(True)
 # Load Data ---------------------------------------------------------------
 
 switch(dataset,
-       
+
        {
-         load("C:/Users/andrew84/Documents/MicrobiomeProject/Data/HIV.rda");
+         load("Output/HIV.rda");
          df = data.frame(Status = HIV$HIV_Status,HIV[,1:60]);
          f_name = "selbal_HIV_16s";
        },
-       
+
        {
-         load("C:/Users/andrew84/Documents/MicrobiomeProject/Data/Crohn.rda")
+         load("Output/Crohn.rda")
          df = data.frame(Status = Crohn$y,Crohn[,1:48]);
          df$Status = dplyr::if_else(df$Status=="CD","pos","neg");
          #preprocessing
@@ -73,17 +73,17 @@ switch(dataset,
          df = df[bool,];
          f_name = "selbal_Crohns_16s";
        },
-       
+
        {
          ## nfald
-         df = read.csv(file = "/Output/16S-11635_NAFLD.csv") ## good;
+         df = read.csv(file = "Output/16S-11635_NAFLD.csv") ## good;
          rs = rowSums(df[,-1]);
          bool = rs>5e3;
          df = df[bool,];
          f_name = "qitta_NAFLD_16s";
-         
+
        },
-       
+
        {
          load("Output/microbiomeHD_cdiSchubert.Rda"); # a go
          df = expResults$taxa.df;
@@ -95,79 +95,79 @@ switch(dataset,
          df = df[df$Status%in%keep,];
          df = df[,-1];
          f_name = "mbiomeHD_cdiSchubert_16s";
-         
+
        },
-       
+
        {
          load("Output/curatedMetaGenome_RubelMA_2020.Rda"); ## good
          keep = c("control","STH");
          f_name = "cmg_RubelMA-2020_STH"
        },
-       
+
        {
          load("Output/curatedMetaGenome_ZhuF_2020.Rda") ## good
          keep = c("control","schizofrenia");
          f_name = "cmg_ZhuF-2020_schizo"
-         
+
        },
-       
+
        {
          load("Output/curatedMetaGenome_QinN_2014.Rda")
          keep = c("control","cirrhosis");
          f_name = "cmg_QinN-2014_cirr"
        },
-       
+
        {
          load("Output/curatedMetaGenome_NielsenHB_2014.Rda");
          keep = c("control","IBD");
          f_name = "cmg_NielsenHB-2014_ibd"
-         
+
        },
-       
+
        {
          load("Output/curatedMetaGenome_FengQ_2015.Rda");
          keep = c("control","CRC");
          f_name = "cmg_FengQ-2015_crc"
-         
+
        },
-       
+
        {
          load("Output/curatedMetaGenome_ThomasAM_2019_c.Rda");
          keep = c("control","CRC");
          f_name = "cmg_ThomasAM_2019_crc"
-         
+
        },
-       
+
        {
          load("Output/curatedMetaGenome_WirbelJ_2018.Rda");
          keep = c("control","CRC");
          f_name = "cmg_WirbelJ-2018_crc"
        },
-       
+
        {
          load("Output/curatedMetaGenome_YachidaS_2019.Rda");
          f_name = "cmg_YachidaS-2019_crc";
-         keep = c("control","CRC")       
+         keep = c("control","CRC")
        },
-       
+
        {
          load("Output/curatedMetaGenome_ZellerG_2014.Rda");
          f_name = "cmg_ZellerG_2014_crc";
          keep = c("control","CRC")
        },
-       
+
        {
          load("Output/curatedMetaGenome_VogtmannE_2016.Rda");
          f_name = "cmg_ZVogtmannE_2016_crc";
          keep = c("control","CRC")
        },
-       
+
        {
          load("Output/curatedMetaGenome_YuJ_2015.Rda");
          f_name = "cmg_YuJ_2015_crc";
          keep = c("control","CRC")
        }
-       
+
 )
 
 
@@ -239,8 +239,8 @@ message("\n\n``````` Start Seed:  ",sd,"````````````\n\n")
 #  Perform 2-fold cross validation -------------------------------
 
 for(f in 1:k_fold){
-  
-  
+
+
   ## Extract Test/Train Split
   ttData = DiCoVarML::extractTrainTestSplit(foldDataList = allData,
                                             fold = f,
@@ -255,76 +255,76 @@ for(f in 1:k_fold){
   nsamps = nrow(train.data)
   table(ttData$y_test)
   classes = as.character(unique(ttData$y_train))
-  
-  
-  
+
+
+
   # # selbal ------------------------------------------------------------------
-  
+
   xt =train.data
   yt = ttData$y_train
-  
-  
-  
+
+
+
   compTime = system.time({
     bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
     train.bv = selbal::bal.value(bv,x = log(xt+1) )
   })
 
-  
+
   df.train =  data.frame(bal = train.bv)
   test.bv = selbal::bal.value(bv,x = log(ttData$test_data +1))
   df.test =  data.frame(bal = test.bv)
-  
-  
+
+
   tbl = data.frame(Status = yt,df.train)
   tbl.test = data.frame(Status = ttData$y_test,df.test)
   gm = glm(formula = Status~.,data = tbl,family = binomial)
   p = predict.glm(gm, newdata = df.test, type = "response")
   mroc.selbal = pROC::auc(ttData$y_test,p);mroc.selbal
-  
-  
-  
+
+
+
   #Write Results
   perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
                     Dataset = f_name,Seed = sd,Fold = f,Approach = "SELBAL",AUC = as.numeric(mroc.selbal),
                     number_parts = length(bv$Taxa),number_ratios = 1 ,comp_time = compTime[3],
                     base_dims = ncol(train.data)
   )
-  
+
   benchmark = rbind(benchmark,perf)
-  
- 
-  
+
+
+
   # clr lasso ---------------------------------------------------------------
-  
+
   suppressMessages(suppressWarnings({
     xt =train.data
     yt = ttData$y_train
-    
+
     z <- log(xt+1)
     ztrain <- apply(z,2,function (x) x-rowMeans(z))
-    
+
     z <- log(test.data+1)
     ztest <- apply(z,2,function (x) x-rowMeans(z))
-    
+
     ##scale data
     pp = caret::preProcess(ztrain,method = "scale")
     ztrain <- predict(pp, ztrain)
     ztest     <- predict(pp, ztest)
-    
-    
-    
+
+
+
     type_family = if_else(length(classes)>2,"multinomial","binomial")
     compTime = system.time({
       cv.clrlasso <- glmnet::cv.glmnet(ztrain, yt, standardize=F, alpha=1,family=type_family,parallel = T)
     })
-    
+
     if(type_family=="binomial"){
       features = as.matrix(coef(cv.clrlasso, s = "lambda.min"))
       features = features[-1,]
       features = features[abs(features)>0]
       n_parts = length(features)
-      
+
     }else{
       features = as.matrix(coef(cv.clrlasso, s = "lambda.min"))
       keep  = c()
@@ -334,10 +334,10 @@ for(f in 1:k_fold){
         feat = feat[abs(feat)>0]
         keep = c(keep,feat)
       }
-      
+
       features = unique(keep)
       n_parts=length(features)
-      
+
     }
     ## make predictions
     p = predict(cv.clrlasso, newx = ztest, s = "lambda.min",type = "response")
@@ -348,7 +348,7 @@ for(f in 1:k_fold){
       ## multiclass
       mroc = pROC::multiclass.roc(ttData$y_test,p[,,1])
       mroc.clrlasso = pROC::auc(mroc);mroc.clrlasso
-      
+
     }
     #Write Results
     perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
@@ -358,17 +358,17 @@ for(f in 1:k_fold){
                       base_dims = ncol(train.data))
     benchmark = rbind(benchmark,perf)
   }))
-  
-  
+
+
   # coda lasso --------------------------------------------------------------
-  
+
   suppressMessages(suppressWarnings({
     xt =train.data
     yt = ttData$y_train
     ytr = as.numeric(yt)-1
     xt =train.data+1
     xtest = test.data+1
-    
+
     ztransform = function(xt,p_c = NULL){
       ztrain <- log(xt)
       # z=matrix of covariates: add a first column of 1's for beta0
@@ -378,11 +378,11 @@ for(f in 1:k_fold){
       c <- c(0,rep(1,ncol(xt)))
       c <- c/sqrt(normSqr(c))
       c <- as.matrix(c)
-      
+
       if(is.null(p_c)){
         p_c <- c%*%t(c)
       }
-      
+
       # p_cginv <- ginv(p_c);  #use this only if necessary
       p_c_cginv <- p_c; #p_c%*%p_cginv; #this product in our case is = p_c
       # z transformation (centering) for improvement of optimization
@@ -391,13 +391,13 @@ for(f in 1:k_fold){
       colnames(ztrain) <- c("beta0",colnames(xt))
       return(list(dat = ztrain,proj = p_c))
     }
-    
+
     ztrain = ztransform(xt)
     ztest = ztransform(xtest,p_c = ztrain$proj)$dat
     ztrain = ztrain$dat
-    
-    
-    
+
+
+
     compTime = system.time({
       devexp = foreach::foreach(l = cv.clrlasso$lambda,.combine = rbind )%dopar%{
         HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda = l)
@@ -406,25 +406,25 @@ for(f in 1:k_fold){
         ph$score = ph$deviance_explained *ph$lambda
         ph
       }
-      devexp = devexp %>% 
+      devexp = devexp %>%
         filter(num_variables>0)
       mx_dev = max(devexp$deviance_explained)
-      devexp1 = devexp %>% 
-        filter(deviance_explained == mx_dev) %>% 
+      devexp1 = devexp %>%
+        filter(deviance_explained == mx_dev) %>%
         arrange(desc(lambda))
-      
+
       HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda=devexp$lambda[1])
       n_parts = HFHS.results_codalasso$`number of selected variables`
       bet = HFHS.results_codalasso$betas
       train.balances = ztrain %*%bet
-      test.balances = ztest %*%bet 
+      test.balances = ztest %*%bet
     })
-    
+
     ## get train data
     df.train =  data.frame(bal = train.balances)
     df.test =  data.frame(bal = test.balances)
-    
-    
+
+
     tbl = data.frame(Status = ytr,df.train)
     tbl.test = data.frame(Status = ttData$y_test,df.test)
     gm = glm(formula = Status~.,data = tbl,family = binomial)
@@ -437,30 +437,30 @@ for(f in 1:k_fold){
                       base_dims = ncol(train.data)
     )
     benchmark = rbind(benchmark,perf)
-  }))  
-  
-  
+  }))
+
+
   # DCV --------------------------------------------------------------
-  
+
   perc_totalParts2Keep = .75
   num_sets = 5
-  
+
   base_dims = ncol(ttData$train_Data)
   max_parts = round(perc_totalParts2Keep*base_dims)
   sets = round(seq(1,max_parts,length.out = num_sets))[-1]
-  
-  
+
+
   # Run K-Fold Cross Validation ---------------------------------------------
   inner_perf = data.frame()
-  
-  
+
+
   #ensemble = c("ranger","xgbTree","xgbLinear")
   max_sparsity = .9
-  
-  
+
+
   ## Tune target features
   compTime1 = system.time({
-    
+
     for(sd1 in 1:1){
     set.seed(sd1)
     k_fold = 2
@@ -468,40 +468,40 @@ for(f in 1:k_fold){
     innerfold_data = lodo_partition(data.frame(Status = ttData$y_train,ttData$train_Data),
                                     dataset_labels = overll_folds,
                                     sd1)
-    
-    
-    ## Get within fold cross validated performance 
-    
+
+
+    ## Get within fold cross validated performance
+
     for(f in 1:k_fold){
-      
+
       ## Partition inner fold
       innerFold = DiCoVarML::extractTrainTestSplit(foldDataList = innerfold_data,
                                                    fold = f,
                                                    maxSparisty = max_sparsity,
                                                    extractTelAbunance = F)
-      
+
       suppressMessages(suppressWarnings({
-        
+
         ## Pre-Process
         trainx = data.frame(fastImputeZeroes(innerFold$train_Data,impFactor = innerFold$imp_factor))
-        testx = data.frame(fastImputeZeroes(innerFold$test_data,impFactor = innerFold$imp_factor)) 
-        
+        testx = data.frame(fastImputeZeroes(innerFold$test_data,impFactor = innerFold$imp_factor))
+
         ## compute log ratios
         lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_train,trainx))
         lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_test,testx))
-        
-        cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train, 
-                                            includeInfoGain = T, nfolds = 1, numRepeats = 1, 
+
+        cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
+                                            includeInfoGain = T, nfolds = 1, numRepeats = 1,
                                             rankOrder = F)
-        
+
       }))
-      
-      
-      
+
+
+
       for(tar_Features in sets){
-        
+
         suppressMessages(suppressWarnings({
-          
+
           tar_dcvInner = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,
                                                useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
                                                testx = testx,
@@ -511,54 +511,54 @@ for(f in 1:k_fold){
                                                ensemble = ensemble,
                                                y_test = innerFold$y_test,
                                                tarFeatures = tar_Features,
-                                               ts.id = innerFold$test_ids, 
+                                               ts.id = innerFold$test_ids,
                                                max_sparsity = max_sparsity
           )
-          
+
           perf = data.frame(Seed = sd1,Fold = f,tar_Features ,tar_dcvInner$Performance)
           inner_perf = rbind(inner_perf,perf)
         }))
-        
+
         message(tar_Features)
-        
+
       }
-      
+
     }
-    
+
   }
-  
+
   })
-    
+
   ## aggregate results
-  inner_perf1 = inner_perf %>% 
-    dplyr::group_by(Approach,tar_Features) %>% 
+  inner_perf1 = inner_perf %>%
+    dplyr::group_by(Approach,tar_Features) %>%
     summarise_all(.funs = mean)
   ggplot(inner_perf1,aes(tar_Features,AUC,col = Approach))+
     geom_point()+
     geom_line()
-  
-  inner_perf2 = inner_perf %>% 
-    dplyr::group_by(tar_Features) %>% 
+
+  inner_perf2 = inner_perf %>%
+    dplyr::group_by(tar_Features) %>%
     summarise_all(.funs = mean)
   ggplot(inner_perf2,aes(tar_Features,AUC))+
     geom_point()+
     geom_line()
-  
+
   ## Train final Model
-  
+
     ## Pre-Process
     trainx = data.frame(fastImputeZeroes(ttData$train_Data,impFactor = ttData$imp_factor))
-    testx = data.frame(fastImputeZeroes(ttData$test_data,impFactor = ttData$imp_factor)) 
-    
+    testx = data.frame(fastImputeZeroes(ttData$test_data,impFactor = ttData$imp_factor))
+
     ## compute log ratios
     lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = ttData$y_train,trainx))
     lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = ttData$y_test,testx))
-    
-    
+
+
     ## Apply targted feature selection method
     compTime2 = system.time({
-      cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train, 
-                                          includeInfoGain = T, nfolds = 1, numRepeats = 1, 
+      cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
+                                          includeInfoGain = T, nfolds = 1, numRepeats = 1,
                                           rankOrder = F)
       tar_Features = inner_perf2$tar_Features[which.max(inner_perf2$AUC)]
       tar_dcv = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,
@@ -570,11 +570,11 @@ for(f in 1:k_fold){
                                       #ensemble = ensemble,
                                       y_test = ttData$y_test,
                                       tarFeatures = tar_Features,
-                                      ts.id = ttData$test_ids, 
+                                      ts.id = ttData$test_ids,
                                       max_sparsity = max_sparsity
       )
   })
-  
+
   perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
                     Dataset = f_name,Seed = sd,Fold = f,Approach = tar_dcv$Performance$Approach,AUC = as.numeric(tar_dcv$Performance$AUC),
                     number_parts = tar_dcv$Performance$number_parts,number_ratios = tar_dcv$Performance$number_ratios ,
@@ -582,9 +582,9 @@ for(f in 1:k_fold){
                     base_dims = ncol(train.data)
   )
   benchmark = rbind(benchmark,perf)
-  
-  
-  
+
+
+
 }
 
 #}
@@ -594,21 +594,21 @@ for(f in 1:k_fold){
 write_csv(x = benchmark,file = paste0("Results/Exp_Benchamark/",f_name,".csv"))
 
 
-# res = benchmark %>% 
-#   group_by(Approach,Dataset) %>% 
-#   summarise_all(mean) %>% 
+# res = benchmark %>%
+#   group_by(Approach,Dataset) %>%
+#   summarise_all(mean) %>%
 #   arrange(desc(AUC))
 # res = data.frame(res)
-# 
-# 
+#
+#
 # benchmark$Approach = factor(benchmark$Approach,levels = res$Approach)
-# res = benchmark %>% 
-#   group_by(Approach,Dataset,Seed) %>% 
-#   summarise_all(mean) %>% 
+# res = benchmark %>%
+#   group_by(Approach,Dataset,Seed) %>%
+#   summarise_all(mean) %>%
 #   arrange(desc(AUC))
 # res = data.frame(res)
 # write_csv(benchmark,paste0(f_name,".csv"))
-# 
+#
 # tiff(filename =paste0(f_name,".tiff"),width = 4.5,height = 5.5,units = "in",res = 300)
 # ggplot(benchmark,aes(Approach,AUC))+
 #   theme_bw()+
@@ -632,15 +632,15 @@ write_csv(x = benchmark,file = paste0("Results/Exp_Benchamark/",f_name,".csv"))
 #         legend.title = element_text(size = 8),
 #         #legend.background = element_rect(colour = "black")
 #   )
-# 
+#
 # dev.off()
-# 
-# 
-# 
-# 
+#
+#
+#
+#
 # ## kruskal test
 # kw = spread(benchmark[,1:6],"Approach","AUC")
 # kruskal.test(x = res$AUC,g = res$Approach)
-# 
+#
 # wilcox.test(x = kw$`DCV-rfRFE`,y = kw$`CLR-LASSO`,paired = T,alternative = "two.sided")
 # wilcox.test(x = kw$`DCV-ridgeEnsemble`,y = kw$`Coda-LASSO`,paired = T,alternative = "two.sided")

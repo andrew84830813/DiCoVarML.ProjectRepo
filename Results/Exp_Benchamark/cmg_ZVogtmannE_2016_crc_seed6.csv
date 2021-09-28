@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,1,SELBAL,0.5307692307692308,10,1,219.945,250
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,1,CLR-LASSO,0.5,0,0,0.3949999999999818,250
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,1,Coda-LASSO,0.5907692307692307,238,1,33.79900000000001,250
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,2,DCV-ridgeRegression,0.6353846153846154,141,4120,1633.478,250
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,2,DCV-ridgeEnsemble,0.6292307692307693,141,4120,1633.478,250
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,2,SELBAL,0.6153846153846153,8,1,214.0139999999999,245
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,2,CLR-LASSO,0.5399408284023669,11,11,0.2739999999998872,245
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,2,Coda-LASSO,0.658284023668639,200,1,21.111999999999625,245
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,2,DCV-ridgeRegression,0.6464497041420119,47,502,1347.9530000000004,245
+Empirical,cmg_ZVogtmannE_2016_crc_seed6,6,2,DCV-ridgeEnsemble,0.636094674556213,47,502,1347.9530000000004,245
