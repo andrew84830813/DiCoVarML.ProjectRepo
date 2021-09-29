@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims,permuteLabel,shift_parm,sparsity
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,1,SELBAL,0.6612,20,1,145.86700000000002,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,1,CLR-LASSO,0.5644,21,21,0.7360000000000184,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,1,Coda-LASSO,0.4832,2,1,118.452,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,2,DCV-ridgeRegression,0.6699999999999999,138,3519,1052.4430000000002,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,2,DCV-ridgeEnsemble,0.6796,138,3519,1052.4430000000002,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,2,SELBAL,0.6352,13,1,130.50200000000018,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,2,CLR-LASSO,0.5592,24,24,0.68100000000004,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,2,Coda-LASSO,0.6088,2,1,97.79000000000019,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,2,DCV-ridgeRegression,0.6696,104,2080,1001.4100000000001,184,FALSE,3,0.9
+Empirical,WGS_meanShift3_permuteFALSE_seed5_sparsity10,5,2,DCV-ridgeEnsemble,0.6768,104,2080,1001.4100000000001,184,FALSE,3,0.9

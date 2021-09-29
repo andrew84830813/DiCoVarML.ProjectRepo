@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims,permuteLabel,shift_parm,sparsity
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,1,SELBAL,0.5428000000000001,12,1,64.031,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,1,CLR-LASSO,0.5024,1,1,1.0470000000000113,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,1,Coda-LASSO,0.5492,2,1,77.17799999999998,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,2,DCV-ridgeRegression,0.8612,91,1736,631.3779999999999,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,2,DCV-ridgeEnsemble,0.8592,91,1736,631.3779999999999,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,2,SELBAL,0.5035999999999999,27,1,91.3839999999999,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,2,CLR-LASSO,0.5,0,0,1.54200000000003,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,2,Coda-LASSO,0.5548,2,1,107.71299999999997,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,2,DCV-ridgeRegression,0.9312,91,1769,616.8870000000001,121,FALSE,3,0.5
+Empirical,16S_meanShift3_permuteFALSE_seed3_sparsity50,3,2,DCV-ridgeEnsemble,0.8987999999999999,91,1769,616.8870000000001,121,FALSE,3,0.5
