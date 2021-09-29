@@ -1,6 +1,20 @@
+library(diffCompVarRcpp)
+library(selEnergyPermR)
+library(simplexDataAugmentation)
+library(DiCoVarML)
+library(caret)
+library(dplyr)
+library(compositions)
+library(foreach)
+library(parallel)
+library(readr)
+library(tidyr)
+library(stringr)
+library(glmnet) # glmnet
+library(selbal) # selbal
 
 
-fnames = dir("Results/")
+fnames = dir("Results/Exp_Benchamark/")
 
 
 # nm = "cmg_RubelMA-2020_STH"
@@ -14,18 +28,21 @@ fnames = dir("Results/")
 #  nm[9] = "cmg_ZellerG_2014_crc"
 # # #f_name = "cmg_ZVogtmannE_2016_crc" ## sim
 #  nm[10] = "cmg_YuJ_2015_crc"
-# 
-#  
- 
- 
- 
- ## Final Data Sets to include
- nm = "cmg_QinN-2014_cirr"
- nm[2] = "cmg_RubelMA-2020_STH"
- nm[3] = "cmg_ZhuF-2020_schizo"
- nm[4] = "cmg_ZellerG_2014_crc"
- 
- 
+#
+#
+
+## 16S
+nm = "selbal_Crohns_16s"
+nm[2] = "selbal_HIV_16s"
+nm[3] = "qitta_NAFLD_16s"
+nm[4] = "mbiomeHD_cdiSchubert_16s"
+ ## WGS
+ nm[5] = "cmg_QinN-2014_cirr"
+ nm[6] = "cmg_RubelMA-2020_STH"
+ nm[7] = "cmg_ZhuF-2020_schizo"
+ nm[8] = "cmg_ZellerG_2014_crc"
+
+
 
 results_all = data.frame()
 for(f_name in nm){
@@ -33,24 +50,47 @@ for(f_name in nm){
   f = fnames[bool]
   results = data.frame()
   for(i in f){
-    ph = read_csv(file = paste0("Results/",i))
+    ph = read_csv(file = paste0("Results/Exp_Benchamark/",i))
     results = rbind(results,ph)
   }
-  results = separate(results,col = 2,into = c("Dataset","s"),sep = "_seed") %>% 
+  results = separate(results,col = 2,into = c("Dataset","s"),sep = "_seed") %>%
     dplyr::select(-s)
   ## correct fold mislabeling
-  results$corrected_fold = rep(c(rep(1,5),rep(2,5)),5)
+  results$corrected_fold = rep(c(rep(1,5),rep(2,5)),n_distinct(results$Seed))
+  results$data_type = if_else(str_detect(f_name,"cmg"),"WGS","16S")
   results_all = rbind(results_all,results)
+}
+results_all$seed_fold = paste0(results_all$Seed,"_",results_all$corrected_fold)
+
+
+
+## Assign Rank
+seed_fold = unique(results_all$seed_fold)
+ds = unique(results_all$Dataset)
+results_all1 = data.frame()
+for(sf in seed_fold){
+  ph = results_all %>%
+    filter(seed_fold==sf)
+  for(d in ds){
+    phh = ph %>%
+      filter(Dataset == d)
+    phh$rank = rank(-phh$AUC)
+    results_all1 = rbind(results_all1,phh)
+  }
 }
 
 
+
+
+
+
 res = results_all %>%
-  group_by(Approach,Dataset) %>%
+  group_by(Approach,Dataset,data_type) %>%
   summarise_all(mean)
 ds = unique(res$Dataset)
 res.df = data.frame()
 for(d in ds){
-  ph = res %>% 
+  ph = res %>%
     filter(Dataset==d)
   ph$col = "lightblue"
   i = which.max(ph$AUC)
@@ -58,49 +98,206 @@ for(d in ds){
   res.df = rbind(res.df,ph)
 }
 res = data.frame(res)
-results_all$seed_fold = paste0(results_all$Seed,"_",results_all$corrected_fold) 
 
 ## Pairwsie comparsion
-cx = list( c("DCV-rfRFE","CLR-LASSO"), c("DCV-rfRFE","Coda-LASSO"),
-           c("DCV-ridgeEnsemble","CLR-LASSO"), c("DCV-ridgeEnsemble","Coda-LASSO"), 
-           c("DCV-ridgeRegression","CLR-LASSO"),c("DCV-ridgeRegression","Coda-LASSO")  )
+cx = list( c("DCV-ridgeEnsemble","CLR-LASSO"), c("DCV-ridgeEnsemble","Coda-LASSO"),c("DCV-ridgeEnsemble","SELBAL"),
+           c("DCV-ridgeRegression","CLR-LASSO"),c("DCV-ridgeRegression","Coda-LASSO"),c("DCV-ridgeRegression","SELBAL")  )
 
 
 
 res1 = results_all %>%
-  group_by(Dataset) %>%
-  summarise_all(mean) %>% 
+  group_by(Dataset,data_type) %>%
+  summarise_all(mean) %>%
   select(Dataset,AUC)
+
+res2 = results_all %>%
+  select(Dataset,data_type,Approach,seed_fold,AUC) %>%
+  spread("Approach","AUC")
+
+wt.df = data.frame()
+dt = unique(results_all$data_type)
+for(s in dt){
+  for(d in ds){
+    ph = res2 %>%
+      filter(Dataset==d)
+    phh = data.frame()
+    for(i in 1:length(cx)){
+      wt = wilcox.test(pull(ph,cx[[i]][1]),pull(ph,cx[[i]][2]),paired = T)
+      phh = rbind(phh,data.frame(Data_type = s,Dataset = d,g1 = cx[[i]][1],g2 = cx[[i]][2],p = wt$p.value,stat = wt$statistic ))
+    }
+    phh$p.adj = p.adjust(phh$p,method = "BH")
+    wt.df = rbind(wt.df,phh)
+  }
+}
+
+wt.df$signf = if_else(wt.df$p.adj<0.05,T,F)
+wt.df$fill_p = if_else(wt.df$p.adj<0.05,wt.df$p.adj,NULL)
+pdf(file = "Figures/benchamrk_ExpData_signf.pdf",width = 7 ,height = 3)
+ggplot(wt.df,aes(g1,g2,fill = fill_p,label = round(p.adj,6)))+
+  geom_tile(col="white")+
+  geom_text(size = 2)+
+  scale_fill_distiller(direction = -1,palette = "Reds")+
+  facet_wrap(.~Dataset,nrow = 2)+
+  theme_bw()+
+  theme(legend.position = "none",
+        strip.background = element_blank(),strip.text = element_text(face = "bold",size = 8),
+        plot.title = element_text(size = 7,hjust = .5,face = "bold"),
+        #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
+        axis.title = element_text(size = 8),
+        axis.title.y = element_blank(),
+        axis.text = element_text(size = 8),
+        #axis.text.y = element_text(size = 7),
+        axis.text.x =element_text(hjust = 1),
+        #legend.margin=margin(-1,-1,-1,-1),
+        strip.switch.pad.wrap = margin(0,0,0,0),
+        legend.margin=margin(-5,-10,-10,-10),
+        panel.grid = element_blank(),
+        legend.key.size = unit(.15,units = "in"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        #legend.background = element_rect(colour = "black")
+  )
+
+dev.off()
+
 colnames(res1)[2] = "y.position"
 dd = results_all %>%
   dplyr::group_by(Dataset) %>%
-  rstatix::wilcox_test(data =., AUC ~ Approach,paired = T,comparisons =  cx) %>%
+  rstatix::wilcox_test(data =., AUC ~ Approach,paired = T,alternative = "greater",comparisons = cx) %>%
   rstatix::adjust_pvalue(method = "BH") %>%
   rstatix::add_significance("p.adj") %>%
-  dplyr::arrange(dplyr::desc(-p)) %>% 
-  filter(p.adj<0.05) %>% 
+  dplyr::arrange(dplyr::desc(-p)) %>%
+  filter(p.adj<0.05) %>%
   left_join(res1)
 
 
 #tiff(filename =paste0(f_name,".tiff"),width = 4.5,height = 5.5,units = "in",res = 300)
-pdf(file = "Figures/benchamrk_ExpData.pdf",width = 7 ,height = 4)
+pdf(file = "Figures/benchamrk_ExpData.pdf",width = 7 ,height = 3)
 ggplot(results_all,aes(Approach,AUC,shape = Approach))+
   theme_bw()+
-  #coord_flip()+
-  stat_summary(fun.y = mean, geom = "line",size = 1,col = "black",aes(group =1))+
-  #stat_summary(fun.data = mean_se,geom = "errorbar",width = .05)+
-  geom_signif(comparisons = cx,tip_length = .05,
-              test = "wilcox.test",hjust = -.5,vjust = -1,textsize = 3,
-              test.args = list(paired = T),y_position = seq(1,1.25,length.out = 6),
-              map_signif_level = function(p) sprintf("p = %.2g", p)
-             )+
-  geom_line(aes(group =seed_fold),col = "gray")+
-  geom_point(col  ="gray",size = 1)+
+  geom_line(aes(group =seed_fold),col = "gray",alpha = .2)+
+  stat_summary(fun.y = mean, geom = "line",size = .75,col = "black",aes(group =1))+
+  stat_summary(fun.data = mean_cl_normal,geom = "errorbar",width = .1)+
+  geom_point(col  ="gray",size = 1,alpha = .5)+
   scale_shape_manual(values = 21:26)+
-  geom_point(data = res.df,aes(Approach,AUC),fill = res.df$col,col = "black",size = 4)+
+  geom_point(data = res.df,aes(Approach,AUC),fill = res.df$col,col = "black",size = 2)+
   facet_wrap(.~Dataset,nrow = 2,
              scales = "free_y"
              )+
+  theme(legend.position = "top",
+        plot.title = element_text(size = 7,hjust = .5,face = "bold"),
+        strip.background = element_blank(),strip.text = element_text(face = "bold"),
+        #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
+        axis.title = element_text(size = 8),
+        axis.title.y = element_blank(),
+        #axis.text.y = element_text(size = 7),
+        axis.text.x = element_blank(),
+        #legend.margin=margin(-1,-1,-1,-1),
+        strip.switch.pad.wrap = margin(0,0,0,0),
+        legend.margin=margin(-5,-10,-10,-10),
+        axis.text = element_text(size = 8),
+        panel.grid = element_blank(),
+        legend.key.size = unit(.15,units = "in"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        #legend.background = element_rect(colour = "black")
+  )
+dev.off()
+
+
+
+
+
+
+
+
+#tiff(filename =paste0(f_name,".tiff"),width = 4.5,height = 5.5,units = "in",res = 300)
+pdf(file = "Figures/benchamrk_ExpData_numberParts.pdf",width = 7 ,height = 4)
+ggplot(results_all,aes(Approach,number_parts,fill = Approach))+
+  theme_bw()+
+  stat_summary(fun.y = mean,geom = "col")+
+  stat_summary(fun.y = mean, geom = "point")+
+  stat_summary(fun.data = mean_cl_normal,geom = "errorbar",width = .1)+
+  scale_shape_manual(values = 21:26)+
+  facet_wrap(.~Dataset,nrow = 2,
+             scales = "free_y"
+  )+
+  theme(legend.position = "top",
+        plot.title = element_text(size = 7,hjust = .5,face = "bold"),
+        strip.background = element_blank(),strip.text = element_text(face = "bold"),
+        #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
+        axis.title = element_text(size = 8),
+        axis.title.y = element_blank(),
+        #axis.text.y = element_text(size = 7),
+        axis.text.x = element_blank(),
+        #legend.margin=margin(-1,-1,-1,-1),
+        strip.switch.pad.wrap = margin(0,0,0,0),
+        legend.margin=margin(-5,-10,-10,-10),
+        axis.text = element_text(size = 8),
+        panel.grid = element_blank(),
+        legend.key.size = unit(.15,units = "in"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        #legend.background = element_rect(colour = "black")
+  )
+dev.off()
+
+
+
+
+
+ggplot(results_all,aes(Approach,comp_time,fill = Approach))+
+  theme_bw()+
+  stat_summary(fun.y = mean,geom = "col")+
+  stat_summary(fun.y = mean, geom = "point")+
+  stat_summary(fun.data = mean_cl_normal,geom = "errorbar",width = .1)+
+  scale_shape_manual(values = 21:26)+
+  facet_wrap(.~Dataset,nrow = 2,
+             scales = "free_y"
+  )+
+  theme(legend.position = "top",
+        plot.title = element_text(size = 7,hjust = .5,face = "bold"),
+        strip.background = element_blank(),strip.text = element_text(face = "bold"),
+        #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
+        axis.title = element_text(size = 8),
+        axis.title.y = element_blank(),
+        #axis.text.y = element_text(size = 7),
+        axis.text.x = element_blank(),
+        #legend.margin=margin(-1,-1,-1,-1),
+        strip.switch.pad.wrap = margin(0,0,0,0),
+        legend.margin=margin(-5,-10,-10,-10),
+        axis.text = element_text(size = 8),
+        panel.grid = element_blank(),
+        legend.key.size = unit(.15,units = "in"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        #legend.background = element_rect(colour = "black")
+  )
+
+
+
+#
+ggplot(results_all1,aes(Approach,rank,shape = Approach))+
+  theme_bw()+
+  geom_line(aes(group =seed_fold),col = "gray",alpha = .2)+
+  scale_y_reverse()+
+  #geom_boxplot()+
+  #coord_flip()+
+  stat_summary(fun.y = mean, geom = "line",size = 1,col = "black",aes(group =1))+
+  stat_summary(fun.data = mean_cl_normal,geom = "errorbar",width = .1)+
+  stat_summary(fun.y = mean,geom = "point",width = .1,aes(shape = Approach),size = 2,pch = 17)+
+
+  # geom_signif(comparisons = cx,tip_length = .05,
+  #             test = "wilcox.test",hjust = -.5,vjust = -1,textsize = 3,
+  #             test.args = list(paired = T),y_position = seq(1,1.25,length.out = 6),
+  #             map_signif_level = function(p) sprintf("p = %.2g", p)
+  #            )+
+  geom_point(col  ="gray",size = 3,alpha = .2,pch = 16)+
+  scale_shape_manual(values = 21:26)+
+  #geom_point(data = res.df,aes(Approach,AUC),fill = res.df$col,col = "black",size = 1)+
+  facet_wrap(.~Dataset,nrow = 2,
+             #scales = "free_y"
+  )+
   theme(legend.position = "top",
         plot.title = element_text(size = 7,hjust = .5,face = "bold"),
         #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
@@ -118,5 +315,4 @@ ggplot(results_all,aes(Approach,AUC,shape = Approach))+
         legend.title = element_text(size = 8),
         #legend.background = element_rect(colour = "black")
   )
-dev.off()
 
