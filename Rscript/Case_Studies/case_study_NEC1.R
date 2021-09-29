@@ -130,7 +130,6 @@ message("\n\n``````` Start Seed:  ",sd,"````````````\n\n","fold",f)
 
 
   # RFE - Metadata --------------------------------------------------------------------
-  ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
   message("Compute Performance - Metadata Alone RFE")
   suppressMessages(suppressWarnings({
 
@@ -448,8 +447,8 @@ message("\n\n``````` Start Seed:  ",sd,"````````````\n\n","fold",f)
 
     ## retrieve test and train data
     cc = tar_dcv$ridge_coefficients
-    train.data = cbind(sweep(tar_dcv$weighted_features$train,MARGIN = 2,STATS = as.numeric(cc),FUN = "*")  ,train_data.metaGLM)
-    test.data = cbind(sweep(tar_dcv$weighted_features$test,MARGIN = 2,STATS = as.numeric(cc),FUN = "*"),test_data.metaGLM)
+    train.data = cbind(tar_dcv$weighted_features$train ,train_data.metaGLM)
+    test.data = cbind(tar_dcv$weighted_features$test,test_data.metaGLM)
     y_label = ttData$y_train
     y_test = ttData$y_test
 
@@ -545,7 +544,7 @@ message("\n\n``````` Start Seed:  ",sd,"````````````\n\n","fold",f)
 
 
 ## Write Performance Estimates
-write_csv(x = benchmark,file = paste0("Results/",f_name,".csv"))
+write_csv(x = benchmark,file = paste0("Results/NEC_caseStudy/",f_name,".csv"))
 
 
 
