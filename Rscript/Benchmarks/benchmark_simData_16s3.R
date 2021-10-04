@@ -86,7 +86,7 @@ df = simFromExpData.largeMeanShft(raMatrix = dat[,-1],
                                   perFixedFeatures = percSparse[sparsity])
 
 ## COnvert Back to Counts
-df = data.frame(Status = df$Status,round(sweep(df[,-1],1,counts,"*")))
+df = data.frame(Status = df$Status,round(sweep(df[,-1],1,1e6,"*")))
 
 # DCV Parms
 scale_data = T
@@ -131,26 +131,31 @@ for(f in 1:k_fold){
   xt =train.data
   yt = ttData$y_train
 
-
-
+  ## identify features
   compTime = system.time({
+
+    ## discover features
+    bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
+    xt = subset(xt,select = bv$Taxa)
+
+
+    ## compute balance score on train subset
     bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
     train.bv = selbal::bal.value(bv,x = log(xt+1) )
-  })
 
+    ## store bal data frames/matrices
+    df.train =  data.frame(bal = train.bv)
+    test.bv = selbal::bal.value(bv,x = log(ttData$test_data +1))
+    df.test =  data.frame(bal = test.bv)
 
-  df.train =  data.frame(bal = train.bv)
-  test.bv = selbal::bal.value(bv,x = log(ttData$test_data +1))
-  df.test =  data.frame(bal = test.bv)
+    ## Merge Labels
+    tbl = data.frame(Status = yt,df.train)
+    tbl.test = data.frame(Status = ttData$y_test,df.test)
+    gm = glm(formula = Status~.,data = tbl,family = binomial)
+    p = predict.glm(gm, newdata = df.test, type = "response")
+    mroc.selbal = pROC::auc(ttData$y_test,p);mroc.selbal
 
-
-  tbl = data.frame(Status = yt,df.train)
-  tbl.test = data.frame(Status = ttData$y_test,df.test)
-  gm = glm(formula = Status~.,data = tbl,family = binomial)
-  p = predict.glm(gm, newdata = df.test, type = "response")
-  mroc.selbal = pROC::auc(ttData$y_test,p);mroc.selbal
-
-
+})
 
   #Write Results
   perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
@@ -172,13 +177,10 @@ for(f in 1:k_fold){
     z <- log(xt+1)
     ztrain <- apply(z,2,function (x) x-rowMeans(z))
 
-    z <- log(test.data+1)
-    ztest <- apply(z,2,function (x) x-rowMeans(z))
-
     ##scale data
     pp = caret::preProcess(ztrain,method = "scale")
     ztrain <- predict(pp, ztrain)
-    ztest     <- predict(pp, ztest)
+    # ztest     <- predict(pp, ztest)
 
 
 
@@ -207,6 +209,45 @@ for(f in 1:k_fold){
       n_parts=length(features)
 
     }
+
+
+    xtest = subset(test.data,select = names(features))
+    xtrain = subset(train.data,select = names(features))
+    z <- log(xtest+1)
+    ztest <- apply(z,2,function (x) x-rowMeans(z))
+    z <- log(xtrain+1)
+    ztrain <- apply(z,2,function (x) x-rowMeans(z))
+
+    pp = caret::preProcess(ztrain,method = "scale")
+    ztest     <- predict(pp, ztest)
+
+    type_family = if_else(length(classes)>2,"multinomial","binomial")
+    compTime = system.time({
+      cv.clrlasso <- glmnet::cv.glmnet(ztrain, yt, standardize=F, alpha=1,family=type_family,parallel = T)
+    })
+
+    if(type_family=="binomial"){
+      features = as.matrix(coef(cv.clrlasso, s = "lambda.min"))
+      features = features[-1,]
+      features = features[abs(features)>0]
+      n_parts = length(features)
+
+    }else{
+      features = as.matrix(coef(cv.clrlasso, s = "lambda.min"))
+      keep  = c()
+      for(o in 1:length(features)){
+        ph = as.matrix(features[[o]])
+        feat = ph[-1,]
+        feat = feat[abs(feat)>0]
+        keep = c(keep,feat)
+      }
+
+      features = unique(keep)
+      n_parts=length(features)
+
+    }
+
+
     ## make predictions
     p = predict(cv.clrlasso, newx = ztest, s = "lambda.min",type = "response")
     if(type_family=="binomial"){
@@ -231,6 +272,8 @@ for(f in 1:k_fold){
   # coda lasso --------------------------------------------------------------
 
   suppressMessages(suppressWarnings({
+
+    ## Feature Discovery
     xt =train.data
     yt = ttData$y_train
     ytr = as.numeric(yt)-1
@@ -264,9 +307,43 @@ for(f in 1:k_fold){
     ztest = ztransform(xtest,p_c = ztrain$proj)$dat
     ztrain = ztrain$dat
 
-
-
     compTime = system.time({
+      devexp = foreach::foreach(l = cv.clrlasso$lambda,.combine = rbind )%dopar%{
+        HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda = l)
+        de = HFHS.results_codalasso$`proportion of explained deviance`
+        ph = data.frame(lambda = l,deviance_explained = de,num_variables = HFHS.results_codalasso$`number of selected variables`)
+        ph$score = ph$deviance_explained *ph$lambda
+        ph
+      }
+      devexp = devexp %>%
+        filter(num_variables>0)
+      mx_dev = max(devexp$deviance_explained)
+      devexp1 = devexp %>%
+        filter(deviance_explained == mx_dev) %>%
+        arrange(desc(lambda))
+
+      HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda=devexp$lambda[1])
+      features = HFHS.results_codalasso$`name of selected variables`
+      n_parts = HFHS.results_codalasso$`number of selected variables`
+      bet = HFHS.results_codalasso$betas
+      train.balances = ztrain %*%bet
+      test.balances = ztest %*%bet
+
+
+
+    ## Model Building and Validation
+    xt = subset(train.data,select = features)
+    xtest = subset(test.data,select = features)
+    yt = ttData$y_train
+    ytr = as.numeric(yt)-1
+    xt =xt+1
+    xtest = xtest+1
+
+
+    ztrain = ztransform(xt)
+    ztest = ztransform(xtest,p_c = ztrain$proj)$dat
+    ztrain = ztrain$dat
+
       devexp = foreach::foreach(l = cv.clrlasso$lambda,.combine = rbind )%dopar%{
         HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda = l)
         de = HFHS.results_codalasso$`proportion of explained deviance`
@@ -286,7 +363,6 @@ for(f in 1:k_fold){
       bet = HFHS.results_codalasso$betas
       train.balances = ztrain %*%bet
       test.balances = ztest %*%bet
-    })
 
     ## get train data
     df.train =  data.frame(bal = train.balances)
@@ -298,6 +374,9 @@ for(f in 1:k_fold){
     gm = glm(formula = Status~.,data = tbl,family = binomial)
     p = predict.glm(gm, newdata = df.test, type = "response")
     mroc.codalasso = pROC::auc(ttData$y_test,p);mroc.codalasso
+
+    })
+
     #Write Results
     perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
                       Dataset = f_name,Seed = sd,Fold = f,Approach = "Coda-LASSO",AUC = as.numeric(mroc.codalasso),

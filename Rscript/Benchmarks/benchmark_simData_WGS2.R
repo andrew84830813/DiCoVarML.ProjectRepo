@@ -69,7 +69,8 @@ dat = data.frame(t(zinbwave::zinbSim(mdwgs)$counts));
 dat = sample_n(dat,size = g1+g2,replace = F);
 labels = sample(c(rep("S1",g1),rep("S2",g2)));
 dat = data.frame(Status = labels,dat);
-percSparse = c(.5,.7,.9)
+counts = rowSums(dat[,-1])
+percSparse = c(.5,.7,.9,.95,.98)
 f_name = paste0("WGS_meanShift",shift_parm,"_permute",permute_labels,"_seed",seed_,"_sparsity",100-percSparse[sparsity]*100);
 #process shift
 procData = processCompData(dat,minPrevalence = sparsePercent);
@@ -87,6 +88,10 @@ df = simFromExpData.largeMeanShft(raMatrix = dat[,-1],
                                    n1 = g1,n2 = g2,
                                    featureShiftPercent =  sets[shift_parm],
                                    perFixedFeatures = percSparse[sparsity])
+
+## COnvert Back to Counts
+df = data.frame(Status = df$Status,round(sweep(df[,-1],1,counts,"*")))
+
 # DCV Parms
 scale_data = T
 performRFE = F
@@ -458,6 +463,6 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 benchmark$permuteLabel = permute_labels
 benchmark$shift_parm = shift_parm
 benchmark$sparsity = percSparse[sparsity]
-write_csv(x = benchmark,file = paste0("Results/SimData/",f_name,".csv"))
+write_csv(x = benchmark,file = paste0("Results/SimData2/",f_name,".csv"))
 
 
