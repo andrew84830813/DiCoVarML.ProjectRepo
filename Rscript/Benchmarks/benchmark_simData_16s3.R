@@ -137,7 +137,7 @@ for(f in 1:k_fold){
     ## discover features
     bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
     xt = subset(xt,select = bv$Taxa)
-
+    xtest = subset(ttData$test_data,select = bv$Taxa)
 
     ## compute balance score on train subset
     bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
@@ -145,7 +145,7 @@ for(f in 1:k_fold){
 
     ## store bal data frames/matrices
     df.train =  data.frame(bal = train.bv)
-    test.bv = selbal::bal.value(bv,x = log(ttData$test_data +1))
+    test.bv = selbal::bal.value(bv,x = log(xtest +1))
     df.test =  data.frame(bal = test.bv)
 
     ## Merge Labels
@@ -176,14 +176,17 @@ for(f in 1:k_fold){
 
     z <- log(xt+1)
     ztrain <- apply(z,2,function (x) x-rowMeans(z))
+    z <- log(ttData$test_data+1)
+    ztest <- apply(z,2,function (x) x-rowMeans(z))
+
 
     ##scale data
     pp = caret::preProcess(ztrain,method = "scale")
     ztrain <- predict(pp, ztrain)
-    # ztest     <- predict(pp, ztest)
+    ztest     <- predict(pp, ztest)
 
 
-
+    ## Feature Discovery
     type_family = if_else(length(classes)>2,"multinomial","binomial")
     compTime = system.time({
       cv.clrlasso <- glmnet::cv.glmnet(ztrain, yt, standardize=F, alpha=1,family=type_family,parallel = T)
@@ -207,7 +210,6 @@ for(f in 1:k_fold){
 
       features = unique(keep)
       n_parts=length(features)
-
     }
 
 
@@ -219,6 +221,7 @@ for(f in 1:k_fold){
     ztrain <- apply(z,2,function (x) x-rowMeans(z))
 
     pp = caret::preProcess(ztrain,method = "scale")
+    ztrain     <- predict(pp, ztrain)
     ztest     <- predict(pp, ztest)
 
     type_family = if_else(length(classes)>2,"multinomial","binomial")
@@ -257,7 +260,6 @@ for(f in 1:k_fold){
       ## multiclass
       mroc = pROC::multiclass.roc(ttData$y_test,p[,,1])
       mroc.clrlasso = pROC::auc(mroc);mroc.clrlasso
-
     }
     #Write Results
     perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
