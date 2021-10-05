@@ -1,7 +1,21 @@
 library(dplyr)
 library(ggplot2)
+library(diffCompVarRcpp)
+library(selEnergyPermR)
+library(simplexDataAugmentation)
+library(DiCoVarML)
+library(caret)
+library(dplyr)
+library(compositions)
+library(foreach)
+library(parallel)
+library(readr)
+library(tidyr)
+library(stringr)
+library(glmnet) # glmnet
 
-fnames = dir("Results/SimData/")
+
+fnames = dir("Results/SimData2/")
 
 
 
@@ -17,18 +31,66 @@ for(f_name in nm){
   f = fnames[bool]
   results = data.frame()
   for(i in f){
-    ph = read_csv(file = paste0("Results/SimData/",i))
-    ph$corrected_fold = rep(c(rep(1,5),rep(2,5)),n_distinct(ph$Seed))
+    ph = read_csv(file = paste0("Results/SimData2/",i))
+    ph$corrected_fold = rep(c(rep(1,17),rep(2,17)),n_distinct(ph$Seed))
     results = rbind(results,ph)
   }
   results_all= rbind(results_all,results)
 }
-results_all = tidyr::separate(results_all,col = 2,into = c("Dataset","shift","Permute","S","signalSparsity"),sep = "_")
+
+results_all1 = results_all %>%
+  group_by(Scenario,Dataset,Seed,corrected_fold,Approach,permuteLabel,shift_parm,sparsity) %>%
+  summarise_all(.funs = mean)
+
+results_all1 = tidyr::separate(results_all1,col = 2,into = c("Dataset","shift","Permute","S","signalSparsity"),sep = "_")
 
 
+res = results_all1 %>%
+  filter(!is.na(train_auc))
+seeds = unique(res$Seed)
+opt = data.frame()
+ens.df = data.frame(Approach = c("DCV-ridgeEnsemble","DCV-ridgeRegression",paste0(ensemble,1:length(ensemble))))
+for(s in seeds){
+  for(f in 1:2){
+    ph = res %>%
+      filter(Seed==s & corrected_fold == f) %>%
+      group_by(Scenario,Dataset,Seed,corrected_fold,permuteLabel,shift_parm,sparsity) %>%
+      summarise(train_auc = max(train_auc))
+    ph1 = res %>%
+      filter(Seed==s & corrected_fold == f) %>%
+      dplyr::select(Approach,AUC,train_auc,Scenario,Dataset,Seed,corrected_fold,permuteLabel,shift_parm,sparsity)
+    ph = left_join(ph,ph1)
+
+    ph.tie = ph %>%
+      group_by(Scenario,Dataset,Seed,corrected_fold,permuteLabel,shift_parm,sparsity) %>%
+      summarise(n = n()) %>%
+      filter(n>1) %>%
+      dplyr::select(-n)
+    ph2 = ph %>%
+      group_by(Scenario,Dataset,Seed,corrected_fold,permuteLabel,shift_parm,sparsity) %>%
+      summarise(n = n()) %>%
+      filter(n==1) %>%
+      dplyr::select(-n)
+    ph2 = left_join(ph2,ph)
+    ## handle ties by order/priority of ens.df
+    ph1 = data.frame()
+    for( i in 1:nrow(ph.tie)){
+      pp = ph.tie[i,]
+      pp = left_join(pp,ph)
+      pp = right_join(pp,ens.df)
+      ph1 = rbind(ph1,pp[1,])
+    }
+    ph = rbind(ph2,ph1)
+    opt = rbind(opt,ph)
+  }
+}
+opt$Approach = "DCV"
+res = results_all1 %>%
+  filter(is.na(train_auc))
+res = rbind(res,opt)
 
 
-res = results_all %>%
+res = res %>%
   group_by(Scenario,Dataset,shift_parm) %>%
   summarise_all(mean)
 ds = unique(res$Dataset)
@@ -45,23 +107,29 @@ res = data.frame(res)
 
 #tiff(filename =paste0(f_name,".tiff"),width = 4.5,height = 5.5,units = "in",res = 300)
 
-results_all1 = results_all %>%
+results_all1 = res %>%
   filter(Scenario=="Empirical")
-results_all2 = results_all %>%
-  filter(Scenario!="Empirical")
+# results_all2 = results_all %>%
+#   filter(Scenario!="Empirical")
 sets = data.frame(shift_parm = 1:6,shift_per = 100*(seq(1,1.3,length.out = 6)-1))
 results_all1 = left_join(results_all1,sets)
+dw = 0
+results_all1$Signal_Density = (1-results_all1$sparsity)*100
 
 pdf(file = "Figures/benchamrk_SimData.pdf",width = 7 ,height = 4)
-ggplot(results_all1,aes(shift_per,AUC,shape = Approach))+
+ggplot(results_all1,aes(Signal_Density,AUC,col = Approach))+
   theme_bw()+
-  stat_summary(fun.y = mean, geom = "line",size = .75,aes(group =Approach,col = Approach),position = position_dodge2(1))+
-  stat_summary(fun.y = mean, geom = "point",size = 3,aes(group =Approach,fill = Approach),position = position_dodge2(1))+
-  stat_summary(fun.data = mean_cl_normal,geom = "pointrange",aes(group =Approach,col = Approach),width = .25,position = position_dodge2(1))+
-  facet_grid(Dataset~signalSparsity)+
+  stat_summary(fun.y = mean, geom = "line",size = .75,aes(group =Approach,col = Approach),
+               #position = position_dodge2(dw)
+               )+
+  stat_summary(fun.y = mean, geom = "point",size = 3,aes(group =Approach,fill = Approach),
+               #position = position_dodge2(dw)
+               )+
+  #stat_summary(fun.data = mean_cl_normal,geom = "pointrange",aes(group =Approach,col = Approach),width = .25,position = position_dodge2(dw))+
+  facet_grid(Dataset~shift_per)+
   scale_shape_manual(values = 21:25)+
   xlab("% Mean Shift")+
- scale_x_continuous(breaks = unique(results_all1$shift_per))+
+  #scale_x_continuous(breaks = unique(results_all1$shift_per))+
   theme(legend.position = "top",panel.grid = element_blank(),
         strip.background = element_blank(),strip.text = element_text(face = "bold",size = 8),
         plot.title = element_text(size = 7,hjust = .5,face = "bold"),
@@ -80,6 +148,7 @@ ggplot(results_all1,aes(shift_per,AUC,shape = Approach))+
         legend.title = element_text(size = 8),
         #legend.background = element_rect(colour = "black")
   )
+
 dev.off()
 
 f <- function(x) {

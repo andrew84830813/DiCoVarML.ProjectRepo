@@ -258,36 +258,47 @@ for(f in 1:k_fold){
 
 
 
+
+
   # # selbal ------------------------------------------------------------------
 
   xt =train.data
   yt = ttData$y_train
 
-
-
+  ## identify features
   compTime = system.time({
+
+    ## discover features
+    bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
+    if(nrow(bv)<=1){
+      bv = data.frame(Taxa = colnames(train.data))
+    }
+    nparts = length(bv$Taxa)
+    xt = subset(xt,select = bv$Taxa)
+    xtest = subset(ttData$test_data,select = bv$Taxa)
+
+    ## compute balance score on train subset
     bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
     train.bv = selbal::bal.value(bv,x = log(xt+1) )
+
+    ## store bal data frames/matrices
+    df.train =  data.frame(bal = train.bv)
+    test.bv = selbal::bal.value(bv,x = log(xtest +1))
+    df.test =  data.frame(bal = test.bv)
+
+    ## Merge Labels
+    tbl = data.frame(Status = yt,df.train)
+    tbl.test = data.frame(Status = ttData$y_test,df.test)
+    gm = glm(formula = Status~.,data = tbl,family = binomial)
+    p = predict.glm(gm, newdata = df.test, type = "response")
+    mroc.selbal = pROC::auc(ttData$y_test,p);mroc.selbal
+
   })
-
-
-  df.train =  data.frame(bal = train.bv)
-  test.bv = selbal::bal.value(bv,x = log(ttData$test_data +1))
-  df.test =  data.frame(bal = test.bv)
-
-
-  tbl = data.frame(Status = yt,df.train)
-  tbl.test = data.frame(Status = ttData$y_test,df.test)
-  gm = glm(formula = Status~.,data = tbl,family = binomial)
-  p = predict.glm(gm, newdata = df.test, type = "response")
-  mroc.selbal = pROC::auc(ttData$y_test,p);mroc.selbal
-
-
 
   #Write Results
   perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
-                    Dataset = f_name,Seed = sd,Fold = f,Approach = "SELBAL",AUC = as.numeric(mroc.selbal),
-                    number_parts = length(bv$Taxa),number_ratios = 1 ,comp_time = compTime[3],
+                    Dataset = f_name,Seed = sd,Fold = f,Approach = "SELBAL",AUC = as.numeric(mroc.selbal),train_auc = NA,
+                    number_parts = nparts,number_ratios = 1 ,comp_time = compTime[3],
                     base_dims = ncol(train.data)
   )
 
@@ -303,9 +314,9 @@ for(f in 1:k_fold){
 
     z <- log(xt+1)
     ztrain <- apply(z,2,function (x) x-rowMeans(z))
-
-    z <- log(test.data+1)
+    z <- log(ttData$test_data+1)
     ztest <- apply(z,2,function (x) x-rowMeans(z))
+
 
     ##scale data
     pp = caret::preProcess(ztrain,method = "scale")
@@ -313,6 +324,50 @@ for(f in 1:k_fold){
     ztest     <- predict(pp, ztest)
 
 
+    ## Feature Discovery
+    type_family = if_else(length(classes)>2,"multinomial","binomial")
+    compTime = system.time({
+      cv.clrlasso <- glmnet::cv.glmnet(ztrain, yt, standardize=F, alpha=1,family=type_family,parallel = T)
+    })
+
+    if(type_family=="binomial"){
+      features = as.matrix(coef(cv.clrlasso, s = "lambda.min"))
+      features = features[-1,]
+      features = features[abs(features)>0]
+      n_parts = length(features)
+
+    }else{
+      features = as.matrix(coef(cv.clrlasso, s = "lambda.min"))
+      keep  = c()
+      for(o in 1:length(features)){
+        ph = as.matrix(features[[o]])
+        feat = ph[-1,]
+        feat = feat[abs(feat)>0]
+        keep = c(keep,feat)
+      }
+
+      features = unique(keep)
+      n_parts=length(features)
+    }
+
+
+    if(length(features)<=1){
+      features= rep(0,ncol(train.data))
+      names(features) =colnames(train.data)
+    }
+
+    nparts = length(features)
+
+    xtest = subset(test.data,select = names(features))
+    xtrain = subset(train.data,select = names(features))
+    z <- log(xtest+1)
+    ztest <- apply(z,2,function (x) x-rowMeans(z))
+    z <- log(xtrain+1)
+    ztrain <- apply(z,2,function (x) x-rowMeans(z))
+
+    pp = caret::preProcess(ztrain,method = "scale")
+    ztrain     <- predict(pp, ztrain)
+    ztest     <- predict(pp, ztest)
 
     type_family = if_else(length(classes)>2,"multinomial","binomial")
     compTime = system.time({
@@ -339,6 +394,8 @@ for(f in 1:k_fold){
       n_parts=length(features)
 
     }
+
+
     ## make predictions
     p = predict(cv.clrlasso, newx = ztest, s = "lambda.min",type = "response")
     if(type_family=="binomial"){
@@ -348,13 +405,12 @@ for(f in 1:k_fold){
       ## multiclass
       mroc = pROC::multiclass.roc(ttData$y_test,p[,,1])
       mroc.clrlasso = pROC::auc(mroc);mroc.clrlasso
-
     }
     #Write Results
     perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
                       Dataset = f_name,Seed = sd,Fold = f,Approach = "CLR-LASSO",
-                      AUC = as.numeric(mroc.clrlasso),
-                      number_parts = n_parts,number_ratios = n_parts ,comp_time = compTime[3],
+                      AUC = as.numeric(mroc.clrlasso),train_auc = NA,
+                      number_parts = nparts,number_ratios = nparts ,comp_time = compTime[3],
                       base_dims = ncol(train.data))
     benchmark = rbind(benchmark,perf)
   }))
@@ -363,6 +419,8 @@ for(f in 1:k_fold){
   # coda lasso --------------------------------------------------------------
 
   suppressMessages(suppressWarnings({
+
+    ## Feature Discovery
     xt =train.data
     yt = ttData$y_train
     ytr = as.numeric(yt)-1
@@ -396,9 +454,44 @@ for(f in 1:k_fold){
     ztest = ztransform(xtest,p_c = ztrain$proj)$dat
     ztrain = ztrain$dat
 
-
-
     compTime = system.time({
+      devexp = foreach::foreach(l = cv.clrlasso$lambda,.combine = rbind )%dopar%{
+        HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda = l)
+        de = HFHS.results_codalasso$`proportion of explained deviance`
+        ph = data.frame(lambda = l,deviance_explained = de,num_variables = HFHS.results_codalasso$`number of selected variables`)
+        ph$score = ph$deviance_explained *ph$lambda
+        ph
+      }
+      devexp = devexp %>%
+        filter(num_variables>0)
+      mx_dev = max(devexp$deviance_explained)
+      devexp1 = devexp %>%
+        filter(deviance_explained == mx_dev) %>%
+        arrange(desc(lambda))
+
+      HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda=devexp$lambda[1])
+      features = HFHS.results_codalasso$`name of selected variables`
+
+      if(length(features)<=1){
+        features = colnames(train.data)
+      }
+      nparts = length(features)
+
+
+
+      ## Model Building and Validation
+      xt = subset(train.data,select = features)
+      xtest = subset(test.data,select = features)
+      yt = ttData$y_train
+      ytr = as.numeric(yt)-1
+      xt =xt+1
+      xtest = xtest+1
+
+
+      ztrain = ztransform(xt)
+      ztest = ztransform(xtest,p_c = ztrain$proj)$dat
+      ztrain = ztrain$dat
+
       devexp = foreach::foreach(l = cv.clrlasso$lambda,.combine = rbind )%dopar%{
         HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda = l)
         de = HFHS.results_codalasso$`proportion of explained deviance`
@@ -418,27 +511,28 @@ for(f in 1:k_fold){
       bet = HFHS.results_codalasso$betas
       train.balances = ztrain %*%bet
       test.balances = ztest %*%bet
+
+      ## get train data
+      df.train =  data.frame(bal = train.balances)
+      df.test =  data.frame(bal = test.balances)
+
+
+      tbl = data.frame(Status = ytr,df.train)
+      tbl.test = data.frame(Status = ttData$y_test,df.test)
+      gm = glm(formula = Status~.,data = tbl,family = binomial)
+      p = predict.glm(gm, newdata = df.test, type = "response")
+      mroc.codalasso = pROC::auc(ttData$y_test,p);mroc.codalasso
+
     })
 
-    ## get train data
-    df.train =  data.frame(bal = train.balances)
-    df.test =  data.frame(bal = test.balances)
-
-
-    tbl = data.frame(Status = ytr,df.train)
-    tbl.test = data.frame(Status = ttData$y_test,df.test)
-    gm = glm(formula = Status~.,data = tbl,family = binomial)
-    p = predict.glm(gm, newdata = df.test, type = "response")
-    mroc.codalasso = pROC::auc(ttData$y_test,p);mroc.codalasso
     #Write Results
     perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
-                      Dataset = f_name,Seed = sd,Fold = f,Approach = "Coda-LASSO",AUC = as.numeric(mroc.codalasso),
-                      number_parts = n_parts,number_ratios = 1 ,comp_time = compTime[3],
+                      Dataset = f_name,Seed = sd,Fold = f,Approach = "Coda-LASSO",AUC = as.numeric(mroc.codalasso),train_auc = NA,
+                      number_parts = nparts,number_ratios = 1 ,comp_time = compTime[3],
                       base_dims = ncol(train.data)
     )
     benchmark = rbind(benchmark,perf)
   }))
-
 
   # DCV --------------------------------------------------------------
 
@@ -447,7 +541,7 @@ for(f in 1:k_fold){
 
   base_dims = ncol(ttData$train_Data)
   max_parts = round(perc_totalParts2Keep*base_dims)
-  sets = round(seq(1,max_parts,length.out = num_sets))[-1]
+  sets = round(seq(10,max_parts,length.out = num_sets))
 
 
   # Run K-Fold Cross Validation ---------------------------------------------
@@ -456,142 +550,167 @@ for(f in 1:k_fold){
 
   #ensemble = c("ranger","xgbTree","xgbLinear")
   max_sparsity = .9
-
+  train_auc = data.frame()
 
   ## Tune target features
   compTime1 = system.time({
 
     for(sd1 in 1:1){
-    set.seed(sd1)
-    k_fold = 2
-    overll_folds = caret::createFolds(ttData$y_train,k = k_fold,list = F)
-    innerfold_data = lodo_partition(data.frame(Status = ttData$y_train,ttData$train_Data),
-                                    dataset_labels = overll_folds,
-                                    sd1)
+      set.seed(sd1)
+      k_fold = 2
+      overll_folds = caret::createFolds(ttData$y_train,k = k_fold,list = F)
+      innerfold_data = lodo_partition(data.frame(Status = ttData$y_train,ttData$train_Data),
+                                      dataset_labels = overll_folds,
+                                      sd1)
 
 
-    ## Get within fold cross validated performance
+      ## Get within fold cross validated performance
 
-    for(f in 1:k_fold){
+      for(nf in 1:k_fold){
 
-      ## Partition inner fold
-      innerFold = DiCoVarML::extractTrainTestSplit(foldDataList = innerfold_data,
-                                                   fold = f,
-                                                   maxSparisty = max_sparsity,
-                                                   extractTelAbunance = F)
-
-      suppressMessages(suppressWarnings({
-
-        ## Pre-Process
-        trainx = data.frame(fastImputeZeroes(innerFold$train_Data,impFactor = innerFold$imp_factor))
-        testx = data.frame(fastImputeZeroes(innerFold$test_data,impFactor = innerFold$imp_factor))
-
-        ## compute log ratios
-        lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_train,trainx))
-        lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_test,testx))
-
-        cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
-                                            includeInfoGain = T, nfolds = 1, numRepeats = 1,
-                                            rankOrder = F)
-
-      }))
-
-
-
-      for(tar_Features in sets){
+        ## Partition inner fold
+        innerFold = DiCoVarML::extractTrainTestSplit(foldDataList = innerfold_data,
+                                                     fold = nf,
+                                                     maxSparisty = max_sparsity,
+                                                     extractTelAbunance = F)
 
         suppressMessages(suppressWarnings({
 
-          tar_dcvInner = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,
-                                               useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
-                                               testx = testx,
-                                               dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
-                                               y_label = innerFold$y_train,
-                                               seed = sd1,
-                                               ensemble = ensemble,
-                                               y_test = innerFold$y_test,
-                                               tarFeatures = tar_Features,
-                                               ts.id = innerFold$test_ids,
-                                               max_sparsity = max_sparsity
-          )
+          ## Pre-Process
+          trainx = data.frame(fastImputeZeroes(innerFold$train_Data,impFactor = innerFold$imp_factor))
+          testx = data.frame(fastImputeZeroes(innerFold$test_data,impFactor = innerFold$imp_factor))
 
-          perf = data.frame(Seed = sd1,Fold = f,tar_Features ,tar_dcvInner$Performance)
-          inner_perf = rbind(inner_perf,perf)
+          ## compute log ratios
+          lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_train,trainx))
+          lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_test,testx))
+
+          cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
+                                              includeInfoGain = T, nfolds = 1, numRepeats = 1,
+                                              rankOrder = F)
+
         }))
 
-        message(tar_Features)
+
+
+        for(tar_Features in sets){
+
+          suppressMessages(suppressWarnings({
+
+            tar_dcvInner = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,
+                                                 useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
+                                                 testx = testx,
+                                                 dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
+                                                 y_label = innerFold$y_train,
+                                                 seed = sd1,
+                                                 ensemble = ensemble,
+                                                 y_test = innerFold$y_test,
+                                                 tarFeatures = tar_Features,
+                                                 ts.id = innerFold$test_ids,
+                                                 max_sparsity = max_sparsity
+            )
+
+            perf = data.frame(Seed = sd1,Fold = nf,tar_Features ,tar_dcvInner$Performance)
+            inner_perf = rbind(inner_perf,perf)
+
+            pmat = tar_dcvInner$all_model_preds
+            pmat = pmat %>%
+              group_by(model) %>%
+              summarise(train_auc = as.numeric(pROC::auc(Status,!!as.name(classes[1])) ))
+            pmat = data.frame(pmat)
+            pmat = rbind(pmat,data.frame(model =tar_dcvInner$Performance$Approach,train_auc =  as.numeric(tar_dcvInner$Performance$AUC)))
+            pmat$targetFeatures = tar_Features
+            train_auc = rbind(train_auc,pmat)
+
+          }))
+
+          message(tar_Features)
+
+        }
 
       }
 
     }
 
-  }
-
   })
 
-  ## aggregate results
-  inner_perf1 = inner_perf %>%
-    dplyr::group_by(Approach,tar_Features) %>%
+  train_auc1 = train_auc %>%
+    group_by(model,targetFeatures) %>%
     summarise_all(.funs = mean)
-  ggplot(inner_perf1,aes(tar_Features,AUC,col = Approach))+
+  ggplot(train_auc1,aes(targetFeatures,train_auc,col = model))+
     geom_point()+
     geom_line()
 
-  inner_perf2 = inner_perf %>%
-    dplyr::group_by(tar_Features) %>%
+  train_auc2 = train_auc %>%
+    group_by(targetFeatures) %>%
     summarise_all(.funs = mean)
-  ggplot(inner_perf2,aes(tar_Features,AUC))+
+  ggplot(train_auc2,aes(targetFeatures,train_auc,col = model))+
     geom_point()+
     geom_line()
 
-  ## Train final Model
 
-    ## Pre-Process
-    trainx = data.frame(fastImputeZeroes(ttData$train_Data,impFactor = ttData$imp_factor))
-    testx = data.frame(fastImputeZeroes(ttData$test_data,impFactor = ttData$imp_factor))
+  ## Pre-Process
+  trainx = data.frame(fastImputeZeroes(ttData$train_Data,impFactor = ttData$imp_factor))
+  testx = data.frame(fastImputeZeroes(ttData$test_data,impFactor = ttData$imp_factor))
 
-    ## compute log ratios
-    lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = ttData$y_train,trainx))
-    lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = ttData$y_test,testx))
+  ## compute log ratios
+  lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = ttData$y_train,trainx))
+  lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = ttData$y_test,testx))
 
 
-    ## Apply targted feature selection method
-    compTime2 = system.time({
-      cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
-                                          includeInfoGain = T, nfolds = 1, numRepeats = 1,
-                                          rankOrder = F)
-      tar_Features = inner_perf2$tar_Features[which.max(inner_perf2$AUC)]
-      tar_dcv = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,
-                                      useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
-                                      testx = testx,
-                                      dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
-                                      y_label = ttData$y_train,
-                                      seed = sd,
-                                      #ensemble = ensemble,
-                                      y_test = ttData$y_test,
-                                      tarFeatures = tar_Features,
-                                      ts.id = ttData$test_ids,
-                                      max_sparsity = max_sparsity
-      )
+  ## Apply targted feature selection method
+  compTime2 = system.time({
+    cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
+                                        includeInfoGain = T, nfolds = 1, numRepeats = 1,
+                                        rankOrder = F)
+    tar_Features = train_auc2$targetFeatures[which.max(train_auc2$train_auc)]
+    tar_dcv = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,
+                                    useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
+                                    testx = testx,
+                                    dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
+                                    y_label = ttData$y_train,
+                                    seed = sd,
+                                    #ensemble = ensemble,
+                                    y_test = ttData$y_test,
+                                    tarFeatures = tar_Features,
+                                    ts.id = ttData$test_ids,
+                                    max_sparsity = max_sparsity
+    )
   })
+
+  pmat = tar_dcv$all_model_preds
+  pmat = pmat %>%
+    group_by(model) %>%
+    summarise(auc = as.numeric(pROC::auc(Status,!!as.name(classes[1])) ))
+  pmat = rbind(pmat,data.frame(model =tar_dcv$Performance$Approach,auc =  as.numeric(tar_dcv$Performance$AUC)))
+  tt = train_auc1 %>%
+    filter(targetFeatures==tar_Features)
+  pmat = left_join(pmat,tt)
+
+  pmat1 = pmat %>%
+    filter(model != "svmRadial3") %>%
+    top_n(1,train_auc)
+
+  tt = data.frame(model = "DCV",auc =  pmat1$auc[1],targetFeatures = tar_Features,train_auc = pmat1$train_auc[1])
+  pmat = rbind(pmat,tt)
 
   perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
-                    Dataset = f_name,Seed = sd,Fold = f,Approach = tar_dcv$Performance$Approach,AUC = as.numeric(tar_dcv$Performance$AUC),
-                    number_parts = tar_dcv$Performance$number_parts,number_ratios = tar_dcv$Performance$number_ratios ,
-                    comp_time = compTime1[3]+compTime2[3],
-                    base_dims = ncol(train.data)
-  )
+                    Dataset = f_name,Seed = sd,Fold = f,Approach = pmat$model,
+                    AUC = pmat$auc,train_auc = pmat$train_auc,
+                    number_parts = nparts,number_ratios = nparts ,comp_time = compTime[3],
+                    base_dims = ncol(train.data))
   benchmark = rbind(benchmark,perf)
 
 
 
 }
 
+
+
 #}
 
 
 
-write_csv(x = benchmark,file = paste0("Results/Exp_Benchamark/",f_name,".csv"))
+write_csv(x = benchmark,file = paste0("Results/Exp_Benchamark2/",f_name,".csv"))
 
 
 # res = benchmark %>%

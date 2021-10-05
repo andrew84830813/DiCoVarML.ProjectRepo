@@ -130,6 +130,8 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
 
 
+
+
     # # selbal ------------------------------------------------------------------
 
     xt =train.data
@@ -140,6 +142,10 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
       ## discover features
       bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
+      if(nrow(bv)==0){
+        bv = data.frame(Taxa = colnames(train.data))
+      }
+      nparts = length(bv$Taxa)
       xt = subset(xt,select = bv$Taxa)
       xtest = subset(ttData$test_data,select = bv$Taxa)
 
@@ -163,8 +169,8 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
     #Write Results
     perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
-                      Dataset = f_name,Seed = sd,Fold = f,Approach = "SELBAL",AUC = as.numeric(mroc.selbal),
-                      number_parts = length(bv$Taxa),number_ratios = 1 ,comp_time = compTime[3],
+                      Dataset = f_name,Seed = sd,Fold = f,Approach = "SELBAL",AUC = as.numeric(mroc.selbal),train_auc = NA,
+                      number_parts = nparts,number_ratios = 1 ,comp_time = compTime[3],
                       base_dims = ncol(train.data)
     )
 
@@ -217,6 +223,13 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
       }
 
 
+      if(length(features)==0){
+        features= rep(0,ncol(train.data))
+        names(features) =colnames(train.data)
+      }
+
+      nparts = length(features)
+
       xtest = subset(test.data,select = names(features))
       xtrain = subset(train.data,select = names(features))
       z <- log(xtest+1)
@@ -268,8 +281,8 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
       #Write Results
       perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
                         Dataset = f_name,Seed = sd,Fold = f,Approach = "CLR-LASSO",
-                        AUC = as.numeric(mroc.clrlasso),
-                        number_parts = n_parts,number_ratios = n_parts ,comp_time = compTime[3],
+                        AUC = as.numeric(mroc.clrlasso),train_auc = NA,
+                        number_parts = nparts,number_ratios = nparts ,comp_time = compTime[3],
                         base_dims = ncol(train.data))
       benchmark = rbind(benchmark,perf)
     }))
@@ -330,10 +343,11 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
         HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda=devexp$lambda[1])
         features = HFHS.results_codalasso$`name of selected variables`
-        n_parts = HFHS.results_codalasso$`number of selected variables`
-        bet = HFHS.results_codalasso$betas
-        train.balances = ztrain %*%bet
-        test.balances = ztest %*%bet
+
+        if(length(features)==0){
+          features = colnames(train.data)
+        }
+        nparts = length(features)
 
 
 
@@ -385,13 +399,12 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
       #Write Results
       perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
-                        Dataset = f_name,Seed = sd,Fold = f,Approach = "Coda-LASSO",AUC = as.numeric(mroc.codalasso),
-                        number_parts = n_parts,number_ratios = 1 ,comp_time = compTime[3],
+                        Dataset = f_name,Seed = sd,Fold = f,Approach = "Coda-LASSO",AUC = as.numeric(mroc.codalasso),train_auc = NA,
+                        number_parts = nparts,number_ratios = 1 ,comp_time = compTime[3],
                         base_dims = ncol(train.data)
       )
       benchmark = rbind(benchmark,perf)
     }))
-
 
     # DCV --------------------------------------------------------------
 
@@ -400,7 +413,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
     base_dims = ncol(ttData$train_Data)
     max_parts = round(perc_totalParts2Keep*base_dims)
-    sets = round(seq(1,max_parts,length.out = num_sets))[-1]
+    sets = round(seq(10,max_parts,length.out = num_sets))
 
 
     # Run K-Fold Cross Validation ---------------------------------------------
@@ -409,7 +422,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
     #ensemble = c("ranger","xgbTree","xgbLinear")
     max_sparsity = .9
-
+    train_auc = data.frame()
 
     ## Tune target features
     compTime1 = system.time({
@@ -470,6 +483,16 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
               perf = data.frame(Seed = sd1,Fold = f,tar_Features ,tar_dcvInner$Performance)
               inner_perf = rbind(inner_perf,perf)
+
+              pmat = tar_dcvInner$all_model_preds
+              pmat = pmat %>%
+                group_by(model) %>%
+                summarise(train_auc = as.numeric(pROC::auc(Status,!!as.name(classes[1])) ))
+              pmat = data.frame(pmat)
+              pmat = rbind(pmat,data.frame(model =tar_dcvInner$Performance$Approach,train_auc =  as.numeric(tar_dcvInner$Performance$AUC)))
+              pmat$targetFeatures = tar_Features
+              train_auc = rbind(train_auc,pmat)
+
             }))
 
             message(tar_Features)
@@ -482,21 +505,28 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
     })
 
-    ## aggregate results
-    inner_perf1 = inner_perf %>%
-      dplyr::group_by(Approach,tar_Features) %>%
+    train_auc1 = train_auc %>%
+      group_by(model,targetFeatures) %>%
       summarise_all(.funs = mean)
-    ggplot(inner_perf1,aes(tar_Features,AUC,col = Approach))+
+    ggplot(train_auc1,aes(targetFeatures,train_auc,col = model))+
       geom_point()+
       geom_line()
 
-    inner_perf2 = inner_perf %>%
-      dplyr::group_by(tar_Features) %>%
+    train_auc2 = train_auc %>%
+      group_by(targetFeatures) %>%
       summarise_all(.funs = mean)
-    ggplot(inner_perf2,aes(tar_Features,AUC))+
+    ggplot(train_auc2,aes(targetFeatures,train_auc,col = model))+
       geom_point()+
       geom_line()
 
+
+    # inner_perf2 = inner_perf %>%
+    #   dplyr::group_by(tar_Features) %>%
+    #   summarise_all(.funs = mean)
+    # ggplot(inner_perf2,aes(tar_Features,AUC))+
+    #   geom_point()+
+    #   geom_line()
+    #
     ## Train final Model
 
     ## Pre-Process
@@ -513,7 +543,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
       cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
                                           includeInfoGain = T, nfolds = 1, numRepeats = 1,
                                           rankOrder = F)
-      tar_Features = inner_perf2$tar_Features[which.max(inner_perf2$AUC)]
+      tar_Features = train_auc2$targetFeatures[which.max(train_auc2$train_auc)]
       tar_dcv = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,
                                       useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
                                       testx = testx,
@@ -528,18 +558,27 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
       )
     })
 
+    pmat = tar_dcv$all_model_preds
+    pmat = pmat %>%
+      group_by(model) %>%
+      summarise(auc = as.numeric(pROC::auc(Status,!!as.name(classes[1])) ))
+    pmat = rbind(pmat,data.frame(model =tar_dcv$Performance$Approach,auc =  as.numeric(tar_dcv$Performance$AUC)))
+    tt = train_auc %>%
+      filter(targetFeatures==tar_Features)
+    pmat = left_join(pmat,tt)
+
+
+
     perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
-                      Dataset = f_name,Seed = sd,Fold = f,Approach = tar_dcv$Performance$Approach,AUC = as.numeric(tar_dcv$Performance$AUC),
-                      number_parts = tar_dcv$Performance$number_parts,number_ratios = tar_dcv$Performance$number_ratios ,
-                      comp_time = compTime1[3]+compTime2[3],
-                      base_dims = ncol(train.data)
-    )
+                      Dataset = f_name,Seed = sd,Fold = f,Approach = pmat$model,
+                      AUC = pmat$auc,train_auc = pmat$train_auc,
+                      number_parts = nparts,number_ratios = nparts ,comp_time = compTime[3],
+                      base_dims = ncol(train.data))
     benchmark = rbind(benchmark,perf)
 
 
 
   }
-
 
 benchmark$permuteLabel = permute_labels
 benchmark$shift_parm = shift_parm
