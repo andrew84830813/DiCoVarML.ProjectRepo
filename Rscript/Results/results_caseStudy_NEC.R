@@ -1,6 +1,6 @@
 
 
-fnames = dir("Results/")
+fnames = dir("Results/NEC_caseStudy/")
 
 
 ## Final Data Sets to include
@@ -12,7 +12,7 @@ for(f_name in nm){
   f = fnames[bool]
   results = data.frame()
   for(i in f){
-    ph = read_csv(file = paste0("Results/",i))
+    ph = read_csv(file = paste0("Results/NEC_caseStudy/",i))
     results = rbind(results,ph)
   }
 }
@@ -27,13 +27,13 @@ n_fun <- function(x){
 }
 
 
-results$seed_fold = paste0(results$Seed,"_",results$Fold) 
-keep_test = c("mbiome_DCV-ridgeRegression")
-results = results %>% 
+results$seed_fold = paste0(results$Seed,"_",results$Fold)
+keep_test = c("DCV-ridgeRegression")
+results = results %>%
   filter(Approach %in% keep_test)
-results1 = results %>% 
-  dplyr::select(Approach,seed_fold,Scenario,AUC) %>% 
-  spread("Scenario","AUC") %>% 
+results1 = results %>%
+  dplyr::select(Approach,seed_fold,Scenario,AUC) %>%
+  spread("Scenario","AUC") %>%
   mutate(Diff = Empirical-Permuted)
 ggplot(results1,aes(Diff))+
   geom_histogram(col = "black",fill = "lightblue")+
@@ -44,22 +44,24 @@ geom_vline(xintercept = mean(results1$Diff) - (1.96*sd(results1$Diff))/10,col = 
 wilcox.test(results1$Empirical,results1$Permuted,paired = T,alternative = "greater")
 
 
+library(ggsignif)
+
 pdf(file = "Figures/caseStudy_NEC_glmAUC.pdf",width = 2.5 ,height = 3)
 ggplot(results,aes(Scenario,AUC,fill = Scenario,label =AUC))+
   theme_bw()+
-  #facet_grid(.~Approach)+
-  geom_line(aes(group = seed_fold),col = "gray",alpha = .5)+
+  facet_grid(.~Approach)+
+  geom_line(aes(group = seed_fold),col = "gray",alpha = .35)+
   geom_boxplot(alpha = .5,width = .4,outlier.color = NA)+
   scale_color_manual(values = ggsci::pal_lancet()(6)[5:6])+
   scale_fill_manual(values = ggsci::pal_lancet()(6)[5:6])+
   stat_summary(fun = "mean",
-               geom = "crossbar", 
+               geom = "crossbar",
                width = 0.35,
                colour = "black")+
-  geom_point(aes(col = Scenario),alpha = .5,shape = 1)+
-  geom_signif(comparisons = list(c("Permuted", "Empirical")),tip_length = 0, 
+  geom_point(aes(col = Scenario),alpha = .25,shape = 1,size = 3)+
+  geom_signif(comparisons = list(c("Permuted", "Empirical")),tip_length = 0,
               map_signif_level=F,test = "wilcox.test",
-              test.args = list(paired = T) 
+              test.args = list(paired = T)
   )+
   stat_summary(fun.y = mean, geom = "point",col = "red",size = 2)+
   stat_summary(fun.data = n_fun, geom = "text",size = 4,position = position_nudge(x = .4))+
@@ -82,8 +84,8 @@ dev.off()
 
 
 ## compute wilcox test
-results1 = results %>% 
-  select(seed_fold,Scenario,AUC) %>% 
+results1 = results %>%
+  select(seed_fold,Scenario,AUC) %>%
   spread("Scenario","AUC")
 wilcox.test(results1$Empirical,results1$Permuted,paired = T,alternative = "greater")
 

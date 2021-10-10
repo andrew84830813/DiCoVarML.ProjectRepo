@@ -60,145 +60,157 @@ dat = dat[,-1]
 
 ## Merge with samples that have mbiome data
 md1 = left_join(data.frame(X1 = rownames(dat)),md1)
-  
-  
-  # DCV --------------------------------------------------------------
-  
-  perc_totalParts2Keep = .75
-  num_sets = 5
-  
-  base_dims = ncol(dat)
-  max_parts = round(perc_totalParts2Keep*base_dims)
-  sets = round(seq(1,max_parts,length.out = num_sets))[-1]
-  
-  
-  # Run K-Fold Cross Validation ---------------------------------------------
-  inner_perf = data.frame()
-  
-  
-  ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
-  #ensemble = c("ranger","xgbTree","xgbLinear")
-  max_sparsity = .9
-  classes = as.character(unique(y_labels))
-  
-  
-  
-  ## Tune target features
-  for(sd1 in 1:1){
-    set.seed(sd1)
-    k_fold = 2
-    overll_folds = caret::createFolds(y_labels,k = k_fold,list = F)
-    innerfold_data = lodo_partition(data.frame(Status = y_labels,dat),
-                                    dataset_labels = overll_folds,
-                                    sd1)
-    
-    
-    ## Get within fold cross validated performance 
-    
-    for(f in 1:k_fold){
-      
-      ## Partition inner fold
-      innerFold = DiCoVarML::extractTrainTestSplit(foldDataList = innerfold_data,
-                                                   fold = f,
-                                                   maxSparisty = max_sparsity,
-                                                   extractTelAbunance = F)
-      
+
+## DCV Parms
+scale_data = T
+performRFE = F
+useRidgeWeight = F
+min_connected = F
+ensemble = c("ranger","xgbTree","xgbLinear")
+ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
+
+
+
+# DCV --------------------------------------------------------------
+
+perc_totalParts2Keep = .75
+num_sets = 5
+
+base_dims = ncol(dat)
+max_parts = round(perc_totalParts2Keep*base_dims)
+sets = round(seq(1,max_parts,length.out = num_sets))[-1]
+
+
+# Run K-Fold Cross Validation ---------------------------------------------
+inner_perf = data.frame()
+max_sparsity = .9
+classes = as.character(unique(y_labels))
+
+
+
+## Tune target features
+for(sd1 in 1:1){
+  set.seed(sd1)
+  k_fold = 2
+  overll_folds = caret::createFolds(y_labels,k = k_fold,list = F)
+  innerfold_data = lodo_partition(data.frame(Status = y_labels,dat),
+                                  dataset_labels = overll_folds,
+                                  sd1)
+
+
+  ## Get within fold cross validated performance
+
+  for(f in 1:k_fold){
+
+    ## Partition inner fold
+    innerFold = DiCoVarML::extractTrainTestSplit(foldDataList = innerfold_data,
+                                                 fold = f,
+                                                 maxSparisty = max_sparsity,
+                                                 extractTelAbunance = F)
+
+    suppressMessages(suppressWarnings({
+
+      ## Pre-Process
+      trainx = data.frame(fastImputeZeroes(innerFold$train_Data,impFactor = innerFold$imp_factor))
+      testx = data.frame(fastImputeZeroes(innerFold$test_data,impFactor = innerFold$imp_factor))
+
+      ## compute log ratios
+      lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_train,trainx))
+      lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_test,testx))
+
+      cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
+                                          includeInfoGain = T, nfolds = 1, numRepeats = 1,
+                                          rankOrder = F)
+
+    }))
+
+
+
+    for(tar_Features in sets){
+
       suppressMessages(suppressWarnings({
-        
-        ## Pre-Process
-        trainx = data.frame(fastImputeZeroes(innerFold$train_Data,impFactor = innerFold$imp_factor))
-        testx = data.frame(fastImputeZeroes(innerFold$test_data,impFactor = innerFold$imp_factor)) 
-        
-        ## compute log ratios
-        lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_train,trainx))
-        lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_test,testx))
-        
-        cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train, 
-                                            includeInfoGain = T, nfolds = 1, numRepeats = 1, 
-                                            rankOrder = F)
-        
+
+        tar_dcvInner = targeted_dcvSelection(trainx = trainx,
+                                             minConnected = min_connected,
+                                             useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
+                                             testx = testx,
+                                             dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
+                                             y_label = innerFold$y_train,
+                                             seed = sd1,
+                                             ensemble = ensemble,
+                                             y_test = innerFold$y_test,
+                                             tarFeatures = tar_Features,
+                                             ts.id = innerFold$test_ids,
+                                             max_sparsity = max_sparsity
+        )
+
+        perf = data.frame(Seed = sd1,Fold = f,tar_Features ,tar_dcvInner$Performance)
+        inner_perf = rbind(inner_perf,perf)
       }))
-      
-      
-      
-      for(tar_Features in sets){
-        
-        suppressMessages(suppressWarnings({
-          
-          tar_dcvInner = targeted_dcvSelection(trainx = trainx,
-                                               testx = testx,
-                                               dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
-                                               y_label = innerFold$y_train,
-                                               seed = sd1,
-                                               ensemble = ensemble,
-                                               y_test = innerFold$y_test,
-                                               tarFeatures = tar_Features,
-                                               ts.id = innerFold$test_ids, 
-                                               max_sparsity = max_sparsity
-          )
-          
-          perf = data.frame(Seed = sd1,Fold = f,tar_Features ,tar_dcvInner$Performance)
-          inner_perf = rbind(inner_perf,perf)
-        }))
-        
-        message(tar_Features)
-        
-      }
-      
+
+      message(tar_Features)
+
     }
-    
+
   }
-  
-  ## aggregate results
-  inner_perf1 = inner_perf %>% 
-    dplyr::group_by(Approach,tar_Features) %>% 
-    summarise_all(.funs = mean)
-  ggplot(inner_perf1,aes(tar_Features,AUC,col = Approach))+
-    geom_point()+
-    geom_line()
-  
-  inner_perf2 = inner_perf %>% 
-    dplyr::group_by(tar_Features) %>% 
-    summarise_all(.funs = mean)
-  ggplot(inner_perf2,aes(tar_Features,AUC))+
-    geom_point()+
-    geom_line()
-  
-  ## Train final Model
-  ## Pre-Process
-  trainx = data.frame(fastImputeZeroes(dat,impFactor = impFact))
-  testx = data.frame(fastImputeZeroes(dat,impFactor = impFact)) 
-  
-  ## compute log ratios
-  lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = y_labels,trainx))
-  lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = y_labels,testx))
-  
-  cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train, 
-                                      includeInfoGain = T, nfolds = 1, numRepeats = 1, 
-                                      rankOrder = F)
-  
-  ## Apply targted feature selection method
-  tar_Features = inner_perf2$tar_Features[which.max(inner_perf2$AUC)]
-  
-  tar_dcv = targeted_dcvSelection(trainx = trainx,useRidgeWeights = T,scaledata = F,
-                                  testx = testx,
-                                  dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
-                                  y_label = y_labels,
-                                  seed = sd,
-                                  ensemble = ensemble,
-                                  y_test = y_labels,
-                                  tarFeatures = tar_Features,
-                                  ts.id = data.frame(ID= 1:nrow(dat),Status = y_labels), 
-                                  max_sparsity = max_sparsity
-  )
-  
-  
+
+}
+
+## aggregate results
+inner_perf1 = inner_perf %>%
+  dplyr::group_by(Approach,tar_Features) %>%
+  summarise_all(.funs = mean)
+ggplot(inner_perf1,aes(tar_Features,AUC,col = Approach))+
+  geom_point()+
+  geom_line()
+
+inner_perf2 = inner_perf %>%
+  dplyr::group_by(tar_Features) %>%
+  summarise_all(.funs = mean)
+ggplot(inner_perf2,aes(tar_Features,AUC))+
+  geom_point()+
+  geom_line()
+
+## Train final Model
+## Pre-Process
+trainx = data.frame(fastImputeZeroes(dat,impFactor = impFact))
+testx = data.frame(fastImputeZeroes(dat,impFactor = impFact))
+
+## compute log ratios
+lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = y_labels,trainx))
+lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = y_labels,testx))
+
+cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
+                                    includeInfoGain = T, nfolds = 1, numRepeats = 1,
+                                    rankOrder = F)
+
+## Apply targted feature selection method
+tar_Features = inner_perf2$tar_Features[which.max(inner_perf2$AUC)]
+
+
+
+tar_dcv = targeted_dcvSelection(trainx = trainx,
+                                minConnected = min_connected,
+                                useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
+                                testx = testx,
+                                dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
+                                y_label = y_labels,
+                                seed = sd,
+                                ensemble = ensemble,
+                                y_test = y_labels,
+                                tarFeatures = tar_Features,
+                                ts.id = data.frame(ID= 1:nrow(dat),Status = y_labels),
+                                max_sparsity = max_sparsity
+)
+
+
+
 ## Save Results
-#save(tar_dcv,file = "Output/caseStudy_NEC_finalModel.Rda")
+save(tar_dcv,file = "Output/caseStudy_NEC_finalModel_1.Rda")
 
 
 ##Load Results
-load("Output/caseStudy_NEC_finalModel.Rda")
+load("Output/caseStudy_NEC_finalModel_1.Rda")
 library(ggsignif)
 
 ##Retrieve Coeff
@@ -218,7 +230,7 @@ ggplot(p.df,aes(NEC,GLM_Score,fill = NEC))+
   ggsci::scale_fill_lancet()+
   ggsci::scale_color_lancet()+
   ylab("Logistics Regression Score")+
-  # geom_signif(comparisons = list(c("No", "Yes")), 
+  # geom_signif(comparisons = list(c("No", "Yes")),
   #             map_signif_level=F,test = "wilcox.test",)+
   theme_bw()+
   theme(legend.position = "none",panel.grid = element_blank(),
@@ -238,12 +250,13 @@ ggplot(p.df,aes(NEC,GLM_Score,fill = NEC))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 dev.off()
 
 ## Relate Scores to Clinical Outcomes
-p.df1 = p.df %>% 
+library(ggsignif)
+p.df1 = p.df %>%
   filter(NEC=="Yes")
 
 pdf(file = "Figures/caseStudy_NEC_clinOutcome_Surv.pdf",width = 2.2 ,height = 2.25)
@@ -253,7 +266,7 @@ ggplot(p.df1,aes(Survival,GLM_Score))+
   ggsci::scale_fill_lancet()+
   ggsci::scale_color_lancet()+
   ylab("Logistics Regression Score")+
-  geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0, 
+  geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0,
               map_signif_level=F,test = "wilcox.test",)+
   theme_bw()+
   theme(legend.position = "none",panel.grid = element_blank(),
@@ -273,7 +286,7 @@ ggplot(p.df1,aes(Survival,GLM_Score))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 dev.off()
 
@@ -282,9 +295,9 @@ p.df2 = data.frame(p.df1,bin = cut(p.df1$onsetDays,breaks = seq(-7,-25,by = -1) 
 table(p.df2$bin)
 levels(p.df2$bin) = rev(levels(p.df2$bin))
 p.df2$bin = factor(p.df2$bin,labels = 7:24)
-p.df2 = p.df2 %>% 
+p.df2 = p.df2 %>%
   filter(!is.na(bin))
-p.df1.null = p.df %>% 
+p.df1.null = p.df %>%
   filter(NEC!="Yes")
 
 pdf(file = "Figures/caseStudy_NEC_clinOutcome_onset.pdf",width = 3.25 ,height = 2.5)
@@ -299,7 +312,7 @@ ggplot(p.df2,aes(bin,GLM_Score))+
   ggsci::scale_color_lancet()+
   xlab("NEC Onset (Days)")+
   ylab("Logistics Regression Score")+
-  geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0, 
+  geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0,
               map_signif_level=F,test = "wilcox.test",)+
   theme_bw()+
   theme(legend.position = "none",panel.grid = element_blank(),
@@ -319,7 +332,7 @@ ggplot(p.df2,aes(bin,GLM_Score))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 
 dev.off()
@@ -329,11 +342,11 @@ dev.off()
 library(igraph)
 imp.df = data.frame(Ratio = names(cc),Imp = abs(as.numeric(cc)),raw = as.numeric(cc))
 keyRats = tidyr::separate(imp.df,1,into = c("Num","Denom"),sep = "___",remove = F)
-## Define weight such that:  weight * log(a/b) = weight * log(a) - weight * log(b) 
+## Define weight such that:  weight * log(a/b) = weight * log(a) - weight * log(b)
 weights.df = data.frame(Part = keyRats$Num,Coef = keyRats$raw)
 weights.df = rbind(weights.df,data.frame(Part = keyRats$Denom,Coef = -1*keyRats$raw))
-weights.df = weights.df %>% 
-  group_by(Part) %>% 
+weights.df = weights.df %>%
+  group_by(Part) %>%
   summarise_all(.funs = sum)
 weights.df$col = if_else(weights.df$Coef>0,"NEC","nonNEC")
 weights.df$col = factor(weights.df$col,levels = c("nonNEC","NEC"))
@@ -392,7 +405,7 @@ ggplot(weights.df,aes(reorder(Part,Coef),Coef,fill = col))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 dev.off()
 
@@ -400,7 +413,7 @@ dev.off()
 
 
 
-## Visulaize Log Ratio Network of GLM Coeff 
+## Visulaize Log Ratio Network of GLM Coeff
 ## Can think of as a microbial network
 pdf(file = "Figures/caseStudy_CRC_lrnet.pdf",width = 5 ,height = 5)
 par(mar=c(0,0,0,0)+.1)
@@ -460,11 +473,11 @@ dev.off()
 library(igraph)
 imp.df = data.frame(Ratio = names(cc),Imp = abs(as.numeric(cc)),raw = as.numeric(cc))
 keyRats = tidyr::separate(imp.df,1,into = c("Num","Denom"),sep = "___",remove = F)
-## Define weight such that:  weight * log(a/b) = weight * log(a) - weight * log(b) 
+## Define weight such that:  weight * log(a/b) = weight * log(a) - weight * log(b)
 weights.df = data.frame(Part = keyRats$Num,Coef = keyRats$raw)
 weights.df = rbind(weights.df,data.frame(Part = keyRats$Denom,Coef = -1*keyRats$raw))
-weights.df = weights.df %>% 
-  group_by(Part) %>% 
+weights.df = weights.df %>%
+  group_by(Part) %>%
   summarise_all(.funs = sum)
 weights.df$col = if_else(weights.df$Coef>0,"NEC","Control")
 el_= data.frame(keyRats$Num,keyRats$Denom,keyRats$Ratio)
@@ -506,12 +519,12 @@ ggplot(weights.df,aes(reorder(Part,Coef),Coef,fill = col))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 
 
 
-## Visulaize Log Ratio Network of GLM Coeff 
+## Visulaize Log Ratio Network of GLM Coeff
 ## Can think of as a microbial network
 pdf(file = "Figures/caseStudy_NEC_lrnet.pdf",width = 5 ,height = 5)
 par(mar=c(0,0,0,0)+.1)
@@ -580,18 +593,18 @@ dev.off()
 
 
 
-# 
-# 
-# 
-# 
-# 
-# 
-# 
-# 
-# 
+#
+#
+#
+#
+#
+#
+#
+#
+#
 # ### Metada Data
 # ## Pre-Process Metadata
-# mm.char = md1 %>% 
+# mm.char = md1 %>%
 #   select(Sex,
 #          Chorioamnionitis,
 #          Maternal.antepartum.antibiotics.administered,
@@ -604,29 +617,29 @@ dev.off()
 # dummy <- dummyVars(" ~ .", data=rbind(mm.char))
 # newdata <- data.frame(predict(dummy, newdata = rbind(mm.char)))
 # newdata.train = newdata[1:nrow(mm.char),]
-# 
-# 
+#
+#
 # ## cont features
 # train_metadata = data.frame(Age = md1$Age.at.sample.collection..days.,
 #                             gesAge = md1$Gestational.age.at.birth..days.,
 #                             host_weight = md1$Host.weight..g.,
 #                             newdata.train
 # )
-# 
-# 
-# 
+#
+#
+#
 # # GLM - Meta --------------------------------------------------------------------
 # message("Compute Performance - Metadata Alone GLM")
 # suppressMessages(suppressWarnings({
-#   
-#   
+#
+#
 #   ## retrieve test and train data
 #   train.data = cbind(train_metadata)
 #   test.data = cbind(train_metadata)
 #   y_label = y_labels
 #   y_test = y_labels
-#   
-#   
+#
+#
 #   ## Apply Penalized Regression
 #   ## Tune Alpha
 #   type_family = if_else(length(classes)>2,"multinomial","binomial")
@@ -635,15 +648,15 @@ dev.off()
 #   compTime2 = system.time({
 #     aseq = seq(1e-3,1,length.out = 10)
 #     min_dev =  foreach(a = aseq,.combine = rbind)%dopar%{
-#       
+#
 #       aucc = c()
 #       for(f in 1:infld){
 #         bool  = flds==f
 #         compTime2 = system.time({
-#           cv.clrlasso <- glmnet::cv.glmnet(as.matrix(train.data[bool,]),y_label[bool], 
+#           cv.clrlasso <- glmnet::cv.glmnet(as.matrix(train.data[bool,]),y_label[bool],
 #                                            standardize=T, alpha=a,family=type_family)
 #         })
-#         
+#
 #         ## make predictions
 #         p = predict(cv.clrlasso, newx = as.matrix(train.data[!bool,]), s = "lambda.min",type = "response")
 #         if(type_family=="binomial"){
@@ -659,9 +672,9 @@ dev.off()
 #       data.frame(a,auc = mean(aucc))
 #     }
 #   })
-#   min_dev = min_dev %>% 
+#   min_dev = min_dev %>%
 #     arrange(desc(auc))
-#   
+#
 #   ## Train GLM
 #   compTime2 = system.time({
 #     cv.clrlasso <- glmnet::cv.glmnet(as.matrix(train.data),y_label, standardize=T, alpha = min_dev$a[1],family=type_family)
@@ -683,32 +696,32 @@ dev.off()
 #       keep = feat[abs(feat)>0]
 #       feat.df = rbind(feat.df,data.frame(Ratio = names(keep),coef = as.numeric(keep)))
 #     }
-#     feat.df =feat.df %>% 
-#       group_by(Ratio) %>% 
-#       summarise(coef = sum(coef)) %>% 
+#     feat.df =feat.df %>%
+#       group_by(Ratio) %>%
+#       summarise(coef = sum(coef)) %>%
 #       filter(coef!=0)
 #     train_data.metaGLM = subset(train.data,select = feat.df$Ratio)
 #     test_data.metaGLM = subset(test.data,select = feat.df$Ratio)
 #   }
-#   
-#   
+#
+#
 # }))
-# 
-# 
-# 
+#
+#
+#
 # # GLM - Meta --------------------------------------------------------------------
 # message("Compute Performance - Metadata Alone GLM")
 # suppressMessages(suppressWarnings({
-#   
-#   
+#
+#
 #   ## retrieve test and train data
 #   cc = tar_dcv$ridge_coefficients
 #   train.data = cbind(sweep(tar_dcv$weighted_features$train,MARGIN = 2,STATS = as.numeric(cc),FUN = "/")  ,train_data.metaGLM)
 #   test.data = cbind(sweep(tar_dcv$weighted_features$test,MARGIN = 2,STATS = as.numeric(cc),FUN = "/"),test_data.metaGLM)
 #   y_label = y_labels
 #   y_test = y_labels
-#   
-#   
+#
+#
 #   ## Apply Penalized Regression
 #   ## Tune Alpha
 #   type_family = if_else(length(classes)>2,"multinomial","binomial")
@@ -717,15 +730,15 @@ dev.off()
 #   compTime2 = system.time({
 #     aseq = seq(1e-3,1,length.out = 10)
 #     min_dev =  foreach(a = aseq,.combine = rbind)%dopar%{
-#       
+#
 #       aucc = c()
 #       for(f in 1:infld){
 #         bool  = flds==f
 #         compTime2 = system.time({
-#           cv.clrlasso <- glmnet::cv.glmnet(as.matrix(train.data[bool,]),y_label[bool], 
+#           cv.clrlasso <- glmnet::cv.glmnet(as.matrix(train.data[bool,]),y_label[bool],
 #                                            standardize=T, alpha=a,family=type_family)
 #         })
-#         
+#
 #         ## make predictions
 #         p = predict(cv.clrlasso, newx = as.matrix(train.data[!bool,]), s = "lambda.min",type = "response")
 #         if(type_family=="binomial"){
@@ -741,9 +754,9 @@ dev.off()
 #       data.frame(a,auc = mean(aucc))
 #     }
 #   })
-#   min_dev = min_dev %>% 
+#   min_dev = min_dev %>%
 #     arrange(desc(auc))
-#   
+#
 #   ## Train GLM
 #   compTime2 = system.time({
 #     cv.clrlasso <- glmnet::cv.glmnet(as.matrix(train.data),y_label, standardize=T, alpha = min_dev$a[1],family=type_family)
@@ -763,12 +776,12 @@ dev.off()
 #       keep = feat[abs(feat)>0]
 #       feat.df = rbind(feat.df,data.frame(Ratio = names(keep),coef = as.numeric(keep)))
 #     }
-#     feat.df =feat.df %>% 
-#       group_by(Ratio) %>% 
-#       summarise(coef = sum(coef)) %>% 
+#     feat.df =feat.df %>%
+#       group_by(Ratio) %>%
+#       summarise(coef = sum(coef)) %>%
 #       filter(coef!=0)
 #   }
-#   
+#
 #   ## make predictions
 #   p = predict(cv.clrlasso, newx = as.matrix(test.data), s = "lambda.min",type = "response")
 #   if(type_family=="binomial"){
@@ -779,13 +792,13 @@ dev.off()
 #     mroc = pROC::multiclass.roc(y_test,p[,,1])
 #     mroc.dcvlasso = pROC::auc(mroc);mroc.dcvlasso
 #   }
-#   
+#
 #   ## Compute Number of Part
 #   cn =names(c[abs(c)>0])
 #   n_ratios = length(cn)
 #   uniqueParts = unique(as.vector(stringr::str_split(cn,"___",2,simplify = T)))
 #   n_parts  = dplyr::n_distinct(uniqueParts)
-#   
+#
 #   ## Save Performance
 #   perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
 #                     Dataset = f_name,Seed = sd,Fold = f,Approach = "meta_dataGLM",
@@ -793,24 +806,24 @@ dev.off()
 #                     number_parts = n_parts,number_ratios = ncol(train.data) ,comp_time = NA,
 #                     base_dims = ncol(train.data))
 #   benchmark = rbind(benchmark,perf)
-#   
-#   
+#
+#
 # }))
-# 
-# 
-# 
+#
+#
+#
 # ## get coeff
 # ## Accounting for metadata
 # c = as.matrix(coef(cv.clrlasso, s = "lambda.min"))[-1,]
-# 
+#
 # cf = c[abs(c)>0]
 # cf = cf[str_detect(string = names(cf),pattern = "___")]
 # imp.df = data.frame(Ratio = names(cf),Imp = abs(as.numeric(cf)))
 # keyRats = tidyr::separate(imp.df,1,into = c("Num","Denom"),sep = "___",remove = F)
 # weights.df = data.frame(Part = keyRats$Num,Coef = keyRats$Imp)
 # weights.df = rbind(weights.df,data.frame(Part = keyRats$Denom,Coef = cf))
-# weights.df = weights.df %>% 
-#   group_by(Part) %>% 
+# weights.df = weights.df %>%
+#   group_by(Part) %>%
 #   summarise_all(.funs = sum)
 # weights.df$col = if_else(weights.df$Coef>0,"Control","NEC")
 # ggplot(weights.df,aes(reorder(Part,Coef),Coef,fill = col))+
@@ -818,10 +831,10 @@ dev.off()
 #   ggsci::scale_fill_aaas()+
 #   coord_flip()+
 #   theme_bw()
-# 
-# 
-# 
-# 
+#
+#
+#
+#
 # p = predict(cv.clrlasso, newx = as.matrix(test.data), s = "lambda.min",type = "link")
 # p.df = data.frame(Status = y_labels,Res = as.numeric(p))
 # ggplot(p.df,aes(Status,Res,fill  = Status))+
@@ -829,11 +842,11 @@ dev.off()
 #   geom_jitter(aes(col  =Status),width = .1,alpha = .9)+
 #   ggsci::scale_fill_aaas()+
 #   ggsci::scale_color_aaas()
-# 
+#
 # ggplot(weights.df,aes(reorder(Part,Coef),Coef,fill = col))+
 #   geom_col()+
 #   ggsci::scale_fill_aaas()+
 #   coord_flip()+
 #   theme_bw()
-# 
-# 
+#
+#

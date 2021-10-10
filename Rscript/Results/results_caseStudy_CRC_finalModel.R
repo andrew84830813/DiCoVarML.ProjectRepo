@@ -88,6 +88,14 @@ max_sparsity = .9
 classes = as.character(unique(y_labels))
 
 
+## DCV Parms
+scale_data = T
+performRFE = F
+useRidgeWeight = F
+min_connected = F
+ensemble = c("ranger","xgbTree","xgbLinear")
+ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
+
 
 ## Tune target features
 for(sd1 in 1:1){
@@ -97,41 +105,43 @@ for(sd1 in 1:1){
   innerfold_data = lodo_partition(data.frame(Status = y_labels,dat),
                                   dataset_labels = overll_folds,
                                   sd1)
-  
-  
-  ## Get within fold cross validated performance 
-  
+
+
+  ## Get within fold cross validated performance
+
   for(f in 1:k_fold){
-    
+
     ## Partition inner fold
     innerFold = DiCoVarML::extractTrainTestSplit(foldDataList = innerfold_data,
                                                  fold = f,
                                                  maxSparisty = max_sparsity,
                                                  extractTelAbunance = F)
-    
+
     suppressMessages(suppressWarnings({
-      
+
       ## Pre-Process
       trainx = data.frame(fastImputeZeroes(innerFold$train_Data,impFactor = innerFold$imp_factor))
-      testx = data.frame(fastImputeZeroes(innerFold$test_data,impFactor = innerFold$imp_factor)) 
-      
+      testx = data.frame(fastImputeZeroes(innerFold$test_data,impFactor = innerFold$imp_factor))
+
       ## compute log ratios
       lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_train,trainx))
       lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = innerFold$y_test,testx))
-      
-      cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train, 
-                                          includeInfoGain = T, nfolds = 1, numRepeats = 1, 
+
+      cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
+                                          includeInfoGain = T, nfolds = 1, numRepeats = 1,
                                           rankOrder = F)
-      
+
     }))
-    
-    
-    
+
+
+
     for(tar_Features in sets){
-      
+
       suppressMessages(suppressWarnings({
-        
+
         tar_dcvInner = targeted_dcvSelection(trainx = trainx,
+                                             minConnected = min_connected,
+                                             useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
                                              testx = testx,
                                              dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
                                              y_label = innerFold$y_train,
@@ -139,32 +149,32 @@ for(sd1 in 1:1){
                                              ensemble = ensemble,
                                              y_test = innerFold$y_test,
                                              tarFeatures = tar_Features,
-                                             ts.id = innerFold$test_ids, 
+                                             ts.id = innerFold$test_ids,
                                              max_sparsity = max_sparsity
         )
-        
+
         perf = data.frame(Seed = sd1,Fold = f,tar_Features ,tar_dcvInner$Performance)
         inner_perf = rbind(inner_perf,perf)
       }))
-      
+
       message(tar_Features)
-      
+
     }
-    
+
   }
-  
+
 }
 
 ## aggregate results
-inner_perf1 = inner_perf %>% 
-  dplyr::group_by(Approach,tar_Features) %>% 
+inner_perf1 = inner_perf %>%
+  dplyr::group_by(Approach,tar_Features) %>%
   summarise_all(.funs = mean)
 ggplot(inner_perf1,aes(tar_Features,AUC,col = Approach))+
   geom_point()+
   geom_line()
 
-inner_perf2 = inner_perf %>% 
-  dplyr::group_by(tar_Features) %>% 
+inner_perf2 = inner_perf %>%
+  dplyr::group_by(tar_Features) %>%
   summarise_all(.funs = mean)
 ggplot(inner_perf2,aes(tar_Features,AUC))+
   geom_point()+
@@ -173,21 +183,23 @@ ggplot(inner_perf2,aes(tar_Features,AUC))+
 ## Train final Model
 ## Pre-Process
 trainx = data.frame(fastImputeZeroes(dat,impFactor = impFact))
-testx = data.frame(fastImputeZeroes(dat,impFactor = impFact)) 
+testx = data.frame(fastImputeZeroes(dat,impFactor = impFact))
 
 ## compute log ratios
 lrs.train = selEnergyPermR::calcLogRatio(data.frame(Status = y_labels,trainx))
 lrs.test = selEnergyPermR::calcLogRatio(data.frame(Status = y_labels,testx))
 
-cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train, 
-                                    includeInfoGain = T, nfolds = 1, numRepeats = 1, 
+cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
+                                    includeInfoGain = T, nfolds = 1, numRepeats = 1,
                                     rankOrder = F)
 
 ## Apply targted feature selection method
 tar_Features = inner_perf2$tar_Features[which.max(inner_perf2$AUC)]
-tar_Features = 50
+#tar_Features = 50
 
 tar_dcv = targeted_dcvSelection(trainx = trainx,
+                                minConnected = min_connected,
+                                useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
                                 testx = testx,
                                 dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
                                 y_label = y_labels,
@@ -195,15 +207,16 @@ tar_dcv = targeted_dcvSelection(trainx = trainx,
                                 ensemble = ensemble,
                                 y_test = y_labels,
                                 tarFeatures = tar_Features,
-                                ts.id = data.frame(ID= 1:nrow(dat),Status = y_labels), 
+                                ts.id = data.frame(ID= 1:nrow(dat),Status = y_labels),
                                 max_sparsity = max_sparsity
 )
 
 
 
 
+
 ## Save Results
-#save(tar_dcv,file = "Output/caseStudy_CRC_finalModel_top50.Rda")
+#save(tar_dcv,file = "Output/caseStudy_CRC_finalModel_1.Rda")
 
 
 ##Load Results
@@ -248,7 +261,7 @@ ggplot(p.df,aes(CRC,GLM_Score-cof[1],fill = CRC))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 dev.off()
 
@@ -260,7 +273,7 @@ dev.off()
 load("Output/CRC_exp/curatedMetaGenome_YachidaS_2019.Rda")
 clin_md = expResults$metadata
 clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p))),clin_md)
-clin_md = clin_md %>% 
+clin_md = clin_md %>%
   filter(!is.na(ajcc))
 
 # ggplot(clin_md,aes(disease_subtype,GLM_Score-cof[1]))+
@@ -269,7 +282,7 @@ clin_md = clin_md %>%
 #   ggsci::scale_fill_lancet()+
 #   ggsci::scale_color_lancet()+
 #   ylab("Score")+
-#   # geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0, 
+#   # geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0,
 #   #             map_signif_level=F,test = "wilcox.test",)+
 #   theme_bw()+
 #   theme(legend.position = "none",panel.grid = element_blank(),
@@ -289,7 +302,7 @@ clin_md = clin_md %>%
 #         legend.text = element_text(size = 8),
 #         legend.title = element_blank(),
 #         #legend.background = element_rect(colour = "black")+
-#         
+#
 #   )
 
 stage = data.frame(ajcc = unique(clin_md$ajcc),cStage = c("SIII/IV","SI/II","SIII/IV","SI/II","S0"))
@@ -311,7 +324,7 @@ ggplot(clin_md,aes(cStage,GLM_Score-cof[1]))+
   xlab("AJCC Stage")+
   ylab("Logistics Regression Score")+
   labs(caption = paste0("F=",round(sm$`F value`[1],5),", p = ",round(sm$`Pr(>F)`[1],16)))+
-  # geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0, 
+  # geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0,
   #             map_signif_level=F,test = "wilcox.test",)+
   theme_bw()+
   theme(legend.position = "none",panel.grid = element_blank(),
@@ -331,7 +344,7 @@ ggplot(clin_md,aes(cStage,GLM_Score-cof[1]))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 
 dev.off()
@@ -348,8 +361,8 @@ clin_md = expResults$metadata
 mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col = clin_md$sampleID)))
 clin_md$sampleID = colnames(mt)
 clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
-clin_md = clin_md %>% 
-  filter(!is.na(tnm)) 
+clin_md = clin_md %>%
+  filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
 ph = data.frame(sampleID = clin_md$sampleID,stage,Score = clin_md$GLM_Score)
 stage_data = rbind(stage_data,ph)
@@ -361,8 +374,8 @@ mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
 clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
-clin_md = clin_md %>% 
-  filter(!is.na(tnm)) 
+clin_md = clin_md %>%
+  filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
 ph = data.frame(sampleID = clin_md$sampleID,stage,Score = clin_md$GLM_Score)
 stage_data = rbind(stage_data,ph)
@@ -373,8 +386,8 @@ mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
 clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
-clin_md = clin_md %>% 
-  filter(!is.na(tnm)) 
+clin_md = clin_md %>%
+  filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
 ph = data.frame(sampleID = clin_md$sampleID,stage,Score = clin_md$GLM_Score)
 stage_data = rbind(stage_data,ph)
@@ -398,8 +411,8 @@ mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
 clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
-clin_md = clin_md %>% 
-  filter(!is.na(tnm)) 
+clin_md = clin_md %>%
+  filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
 ph = data.frame(sampleID = clin_md$sampleID,stage,Score = clin_md$GLM_Score)
 stage_data = rbind(stage_data,ph)
@@ -411,8 +424,8 @@ mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
 clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
-clin_md = clin_md %>% 
-  filter(!is.na(tnm)) 
+clin_md = clin_md %>%
+  filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
 ph = data.frame(sampleID = clin_md$sampleID,stage,Score = clin_md$GLM_Score)
 stage_data = rbind(stage_data,ph)
@@ -423,7 +436,7 @@ clin_md = left_join(clin_md,stage)
 clin_md$Score = clin_md$GLM_Score - cof[1]
 
 
-stage_data = stage_data %>% 
+stage_data = stage_data %>%
   filter(stage %in% c("t1","t2","t3","t4"))
 
 
@@ -459,7 +472,7 @@ ggplot(stage_data,aes(stage,Score))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 
 dev.off()
@@ -468,11 +481,11 @@ dev.off()
 library(igraph)
 imp.df = data.frame(Ratio = names(cc),Imp = abs(as.numeric(cc)),raw = as.numeric(cc))
 keyRats = tidyr::separate(imp.df,1,into = c("Num","Denom"),sep = "___",remove = F)
-## Define weight such that:  weight * log(a/b) = weight * log(a) - weight * log(b) 
+## Define weight such that:  weight * log(a/b) = weight * log(a) - weight * log(b)
 weights.df = data.frame(Part = keyRats$Num,Coef = keyRats$raw)
 weights.df = rbind(weights.df,data.frame(Part = keyRats$Denom,Coef = -1*keyRats$raw))
-weights.df = weights.df %>% 
-  group_by(Part) %>% 
+weights.df = weights.df %>%
+  group_by(Part) %>%
   summarise_all(.funs = sum)
 weights.df$col = if_else(weights.df$Coef>0,"CRC","Control")
 
@@ -489,7 +502,7 @@ el_act = left_join(el_act,imp.df)
 
 
 # E(g)$weight = el_act$Imp
-# adjacency_matrix <- igraph::as_adjacency_matrix(graph = g, 
+# adjacency_matrix <- igraph::as_adjacency_matrix(graph = g,
 #                                                 sparse = F, attr = "weight")
 # g = knn_graph(adj_mat = adjacency_matrix,K = 3,plot_TrueFalse = T,sim_ = F)
 # g = g$Graph
@@ -538,12 +551,12 @@ ggplot(weights.df,aes(reorder(Part,Coef),Coef,fill = col))+
         legend.text = element_text(size = 8),
         legend.title = element_blank(),
         #legend.background = element_rect(colour = "black")+
-        
+
   )
 dev.off()
 
 
-## Visulaize Log Ratio Network of GLM Coeff 
+## Visulaize Log Ratio Network of GLM Coeff
 ## Can think of as a microbial network
 pdf(file = "Figures/caseStudy_CRC_lrnet.pdf",width = 5 ,height = 5)
 par(mar=c(0,0,0,0)+.1)
