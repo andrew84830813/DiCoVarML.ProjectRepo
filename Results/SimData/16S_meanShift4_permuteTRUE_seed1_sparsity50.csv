@@ -1,0 +1,11 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,number_parts,number_ratios,comp_time,base_dims,permuteLabel,shift_parm,sparsity
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,1,SELBAL,0.538,18,1,93.699,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,1,CLR-LASSO,0.5,0,0,1.3640000000000043,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,1,Coda-LASSO,0.6,2,1,154.293,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,2,DCV-ridgeRegression,0.4864,24,121,684.23,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,2,DCV-ridgeEnsemble,0.5244,24,121,684.23,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,2,SELBAL,0.5696,12,1,81.6350000000001,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,2,CLR-LASSO,0.5276,22,22,0.7699999999999818,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,2,Coda-LASSO,0.5892000000000001,2,1,94.30000000000018,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,2,DCV-ridgeRegression,0.6184,93,1784,785.7410000000002,124,TRUE,4,0.5
+Permuted,16S_meanShift4_permuteTRUE_seed1_sparsity50,1,2,DCV-ridgeEnsemble,0.3816,93,1784,785.7410000000002,124,TRUE,4,0.5
