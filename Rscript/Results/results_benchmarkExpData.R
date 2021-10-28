@@ -37,10 +37,15 @@ nm[2] = "selbal_HIV_16s"
 nm[3] = "qitta_NAFLD_16s"
 nm[4] = "mbiomeHD_cdiSchubert_16s"
 ## WGS
+nm[5] = "cmg_FengQ-2015_crc"
+nm[6] = "cmg_WirbelJ-2018_crc"
+nm[7] = "cmg_YuJ_2015_crc"
+nm[8] = "cmg_ZellerG_2014_crc"
+## WGS
 nm[5] = "cmg_QinN-2014_cirr"
 nm[6] = "cmg_RubelMA-2020_STH"
 nm[7] = "cmg_ZhuF-2020_schizo"
-nm[8] = "cmg_ZellerG_2014_crc"
+nm[8] = "cmg_WirbelJ-2018_crc"
 
 
 
@@ -61,6 +66,11 @@ for(f_name in nm){
   results_all = rbind(results_all,results)
 }
 results_all$seed_fold = paste0(results_all$Seed,"_",results_all$Fold)
+
+
+# seeds = sample(1:15,size = 5,replace = F)
+# results_all = results_all %>%
+#   filter(Seed %in% seeds)
 
 
 #
@@ -87,6 +97,9 @@ results_all$seed_fold = paste0(results_all$Seed,"_",results_all$Fold)
 results_all = results_all %>%
   filter(Approach %in% c("SELBAL","CLR-LASSO","DCV-ridgeEnsemble","DCV-ridgeRegression","Coda-LASSO"))
 results_all$Approach = factor(results_all$Approach,levels = c("DCV-ridgeEnsemble","DCV-ridgeRegression","CLR-LASSO","Coda-LASSO","SELBAL"))
+results_all = results_all %>%
+  group_by(Approach,Dataset,data_type,Seed) %>%
+  summarise_all(mean)
 
 
 res = results_all %>%
@@ -97,7 +110,7 @@ res.df = data.frame()
 for(d in ds){
   ph = res %>%
     filter(Dataset==d)
-  ph$col = "lightblue"
+  ph$col = NA
   i = which.max(ph$AUC)
   ph$col[i] = "red"
   res.df = rbind(res.df,ph)
@@ -132,24 +145,37 @@ cx = list( c("DCV-ridgeEnsemble","CLR-LASSO"), c("DCV-ridgeEnsemble","Coda-LASSO
 #   summarise_all(mean)
 
 res2 = results_all %>%
-  dplyr::select(Dataset,data_type,Approach,seed_fold,AUC) %>%
+  dplyr::select(Dataset,data_type,Approach,Seed,AUC) %>%
   spread("Approach","AUC")
 
+# res2 = results_all %>%
+#   dplyr::select(Dataset,data_type,Approach,seed_fold,AUC) %>%
+#   spread("Approach","AUC")
+
 wt.df = data.frame()
-dt = unique(results_all$data_type)
-for(s in dt){
+
   for(d in ds){
     ph = res2 %>%
       filter(Dataset==d)
     phh = data.frame()
     for(i in 1:length(cx)){
       wt = wilcox.test(pull(ph,cx[[i]][1]),pull(ph,cx[[i]][2]),paired = T,alternative = "greater")
-      phh = rbind(phh,data.frame(Data_type = s,Dataset = d,g1 = cx[[i]][1],g2 = cx[[i]][2],p = wt$p.value,stat = wt$statistic ))
+      # st = coin::wilcoxsign_test( pull(ph,cx[[i]][1])~pull(ph,cx[[i]][2]) ,alternative = "greater")
+      # st@statistic@teststatistic/sqrt(length(pull(ph,cx[[i]][1])))
+      dd = data.frame(dif = pull(ph,cx[[i]][1]) - pull(ph,cx[[i]][2]))
+      mean(dd$dif)
+      n = length(pull(ph,cx[[i]][1]))
+      dtt = data.frame(auc = c(pull(ph,cx[[i]][1]),pull(ph,cx[[i]][2])),
+                      label = c(rep(cx[[i]][1],n), rep(cx[[i]][2],n)))
+      ef = rstatix::wilcox_effsize(data = dtt,formula = auc~label,alternative = "greater",ref.group = cx[[i]][1],paired = T)
+
+      phh = rbind(phh,data.frame(Data_type = unique(ph$data_type),Dataset = d,g1 = cx[[i]][1],g2 = cx[[i]][2],p = wt$p.value,stat = wt$statistic,
+                                 mean_diff = mean(dd$dif),sd_diff =sd(dd$dif) ,ef ))
     }
     phh$p.adj = p.adjust(phh$p,method = "BH")
     wt.df = rbind(wt.df,phh)
   }
-}
+
 
 wt.df$signf = if_else(wt.df$p.adj<0.05,T,F)
 wt.df$fill_p = if_else(wt.df$p.adj<0.05,wt.df$p.adj,NULL)
@@ -158,6 +184,40 @@ wt.df$star = if_else(wt.df$signf,wt.df$star,"NS")
 wt.df$p.adj1 = if_else(wt.df$p.adj>0.0001,as.character(sprintf("%.4f",round(wt.df$p.adj,digits = 4))),"<0.0001")
 
 #sprintf("%.3f", p.adj)
+
+w1 = wt.df
+w1$p.adj1 = if_else(str_detect(w1$p.adj1,"<"),paste0("p",w1$p.adj1),paste0("p=",w1$p.adj1))
+w1$effsize = as.numeric(w1$effsize)
+w1 = w1 %>%
+  mutate(effsize = if_else(signf,effsize,NULL))
+w1$p.adj1 = if_else(w1$signf,w1$p.adj1,"N.S.")
+ggplot(w1,aes(mean_diff,g2,label =p.adj1,fill  = g1 ))+
+  geom_col(position = position_dodge2(width = .1),col = "black") +
+  geom_text(size = 2,position = position_dodge2(width = 1,padding = 1),hjust = -.1)+
+  ggsci::scale_fill_d3()+
+  facet_wrap(.~Dataset,nrow = 2)+
+  geom_vline(xintercept = 0)+
+  #scale_x_continuous(limits = c (0,.17))+
+  theme_bw()+
+  theme(legend.position = "top",
+        strip.background = element_blank(),
+        strip.text = element_text(face = "bold",size = 8),
+        plot.title = element_text(size = 7,hjust = .5,face = "bold"),
+        #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
+        axis.title = element_text(size = 8),
+        axis.title.y = element_blank(),
+        axis.text = element_text(size = 8),
+        #axis.text.y = element_text(size = 7),
+        #axis.text.x =element_text(hjust = 1),
+        #legend.margin=margin(-1,-1,-1,-1),
+        strip.switch.pad.wrap = margin(0,0,0,0),
+        legend.margin=margin(-5,-10,-10,-10),
+        panel.grid.minor.x   = element_blank(),
+        legend.key.size = unit(.15,units = "in"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank(),
+        #legend.background = element_rect(colour = "black")
+  )
 
 pdf(file = "Figures/benchamrk_ExpData_signf.pdf",width = 7 ,height = 3)
 ggplot(wt.df,aes(g1,g2,fill = fill_p,label =p.adj1 ))+
@@ -207,13 +267,14 @@ dd = r %>%
 pdf(file = "Figures/benchamrk_ExpData.pdf",width = 7 ,height = 3)
 ggplot(results_all,aes(Approach,AUC,shape = Approach))+
   theme_bw()+
-  geom_line(aes(group =seed_fold),col = "gray",alpha = .2)+
+  geom_line(aes(group =Seed),col = "gray",alpha = .5)+
   stat_summary(fun.y = mean, geom = "line",size = .75,col = "black",aes(group =1))+
-  stat_summary(fun.data = mean_cl_normal,geom = "errorbar",width = .1)+
-  geom_point(aes(fill  =Approach),size = 1,alpha = .5)+
+  #stat_summary(fun.data = mean_cl_normal,geom = "errorbar",width = .1)+
+  geom_point(size = 1,shape =1,col = "gray")+
   ggsci::scale_fill_d3()+
   scale_shape_manual(values = 21:26)+
-  geom_point(data = res.df,aes(Approach,AUC),fill = res.df$col,col = "black",size = 2)+
+  stat_summary(fun.y = mean, geom = "point",size = 2,aes(fill = Approach))+
+  #geom_point(data = res.df,aes(Approach,AUC),fill = res.df$col,col = "black",size = 2)+
   facet_wrap(.~Dataset,nrow = 2,
              scales = "free_y"
   )+
@@ -222,14 +283,14 @@ ggplot(results_all,aes(Approach,AUC,shape = Approach))+
         strip.background = element_blank(),strip.text = element_text(face = "bold"),
         #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
         axis.title = element_text(size = 8),
-        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
         #axis.text.y = element_text(size = 7),
         axis.text.x = element_blank(),
         #legend.margin=margin(-1,-1,-1,-1),
         strip.switch.pad.wrap = margin(0,0,0,0),
         legend.margin=margin(-5,-10,-10,-10),
         axis.text = element_text(size = 8),
-        panel.grid = element_blank(),
+        #panel.grid = element_blank(),
         legend.key.size = unit(.15,units = "in"),
         legend.text = element_text(size = 8),
         legend.title = element_text(size = 8),

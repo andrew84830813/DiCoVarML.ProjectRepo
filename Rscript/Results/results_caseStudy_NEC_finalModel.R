@@ -217,9 +217,16 @@ library(ggsignif)
 cof = coef(tar_dcv$glm_model$mdl)
 cc = tar_dcv$ridge_coefficients
 p = stats::predict(tar_dcv$glm_model$mdl, newx = as.matrix(tar_dcv$glm_model$data$train), s = "lambda.min",type = "lin")
-p.df = data.frame(NEC = y_labels,GLM_Score = as.numeric(p)-cof[1],
+vt = stats::predict(tar_dcv$glm_model$mdl, newx = as.matrix(tar_dcv$glm_model$data$train), s = "lambda.min",type = "class")
+rc = pROC::roc(y_labels,p)
+plot(rc)
+th = pROC::coords(rc, "best", ret = "all", transpose = FALSE)
+vt = if_else(as.numeric(p[,1])>as.numeric(th[1,1]),"Yes","No")
+p.df = data.frame(NEC = y_labels,GLM_Score = as.numeric(p),Sample.Name = md1$Subject.ID,
                   Survival = factor(md1$Survived,levels = c("Yes","No")),
-                  Sepsis = md1$Sepsis.diagnosed,onsetDays = md1$Days.of.period.NEC.diagnosed)
+                  Sepsis = md1$Sepsis.diagnosed,onsetDays = md1$Days.of.period.NEC.diagnosed,Vote = as.character(vt))
+
+confusionMatrix(y_labels,as.factor(vt),positive = "Yes")
 
 
 ## Visualize Overall Scores Between Groups
@@ -259,9 +266,9 @@ library(ggsignif)
 p.df1 = p.df %>%
   filter(NEC=="Yes")
 
-pdf(file = "Figures/caseStudy_NEC_clinOutcome_Surv.pdf",width = 2.2 ,height = 2.25)
+pdf(file = "Figures/caseStudy_NEC_clinOutcome_Surv.pdf",width = 3 ,height = 2.5)
 ggplot(p.df1,aes(Survival,GLM_Score))+
-  geom_boxplot(alpha = .7)+
+  geom_boxplot(alpha = .7,fill = ggsci::pal_lancet()(2)[2])+
   #geom_jitter(aes(col  = NEC),width = .1,alpha = .9)+
   ggsci::scale_fill_lancet()+
   ggsci::scale_color_lancet()+
@@ -300,13 +307,16 @@ p.df2 = p.df2 %>%
 p.df1.null = p.df %>%
   filter(NEC!="Yes")
 
-pdf(file = "Figures/caseStudy_NEC_clinOutcome_onset.pdf",width = 3.25 ,height = 2.5)
-ggplot(p.df2,aes(bin,GLM_Score))+
-  #geom_point(alpha = .7)+
-  stat_summary(fun.y = mean, geom = "line",col = "black",aes(group =1))+
-  stat_summary(fun.y = mean, geom = "point",size = 2,col = "black")+
-  stat_summary(fun.data = mean_se,geom = "errorbar",width = .35)+
-  geom_hline(yintercept = mean(p.df1.null$GLM_Score),lty = "dashed",col = "red")+
+pdf(file = "Figures/caseStudy_NEC_clinOutcome_onset.pdf",width = 4 ,height = 2.5)
+ggplot(p.df2,aes(bin,GLM_Score,col = Vote,shape = Vote))+
+  #\geom_line(aes(group = Sample.Name))+
+  geom_point(alpha = .7)+
+  #geom_boxplot(width = .5)+
+  #geom_violin(width = .01)+
+  stat_summary(fun.y = mean, geom = "line",col = "black",aes(group =1),size = 1)+
+  stat_summary(fun.y = mean, geom = "point",size = 3,col = "black",shape = 17)+
+   #stat_summary(fun.data = mean_sdl(mult = 1),geom = "errorbar",width = .35)+
+  geom_hline(yintercept = th[1,1],lty = "dashed",col = "black")+
   #geom_jitter(aes(col  = NEC),width = .1,alpha = .9)+
   ggsci::scale_fill_lancet()+
   ggsci::scale_color_lancet()+
@@ -315,7 +325,7 @@ ggplot(p.df2,aes(bin,GLM_Score))+
   geom_signif(comparisons = list(c("No", "Yes")),tip_length = 0,
               map_signif_level=F,test = "wilcox.test",)+
   theme_bw()+
-  theme(legend.position = "none",panel.grid = element_blank(),
+  theme(legend.position = "top",panel.grid = element_blank(),
         plot.title = element_text(size = 8,hjust = .5,face = "bold"),
         #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
         axis.title = element_text(size = 8,face = "bold"),
@@ -342,6 +352,21 @@ dev.off()
 library(igraph)
 imp.df = data.frame(Ratio = names(cc),Imp = abs(as.numeric(cc)),raw = as.numeric(cc))
 keyRats = tidyr::separate(imp.df,1,into = c("Num","Denom"),sep = "___",remove = F)
+
+
+## stack ratio for consistent interpretation
+keyRats2 = keyRats
+keyRats2$Num = keyRats$Denom
+keyRats2$Denom= keyRats$Num
+keyRats2$Ratio= paste0(keyRats$Denom,"___",keyRats$Num)
+keyRats2$raw = -keyRats$raw
+keyRats2 = rbind(keyRats,keyRats2)
+### keep negative egdes (more abundance more likely non sever outcome)
+keyRats = keyRats2 %>%
+  filter(raw>0)
+
+
+
 ## Define weight such that:  weight * log(a/b) = weight * log(a) - weight * log(b)
 weights.df = data.frame(Part = keyRats$Num,Coef = keyRats$raw)
 weights.df = rbind(weights.df,data.frame(Part = keyRats$Denom,Coef = -1*keyRats$raw))
@@ -363,7 +388,7 @@ el_act = left_join(el_act,imp.df)
 
 vertices = data.frame(Part = V(g)$name,Label =  V(g)$name)
 vertices = left_join(vertices,weights.df)
-v_color = if_else(vertices$Coef>0,ggsci::pal_lancet(alpha = .9)(2)[1],ggsci::pal_lancet(alpha = .9)(2)[2])
+v_color = if_else(vertices$Coef>0,ggsci::pal_lancet(alpha = .9)(2)[2],ggsci::pal_lancet(alpha = .9)(2)[1])
 vertices$abs_coef = abs(vertices$Coef)
 
 el_act = data.frame(get.edgelist(g))
@@ -423,47 +448,12 @@ plot(g,
      vertex.frame.color = "white",vertex.frame.width = .5,
      vertex.label.cex = .7,
      vertex.label.color = "black",
-     edge.color  =col,
-     edge.width = 125*el_act$Imp ,
+    # edge.color  =col,
+     edge.width = 10*el_act$Imp ,
      vertex.size = abs(vertices$Coef) * 15+2,
      edge.curved = .2,
      edge.arrow.size = .51)
 dev.off()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -486,12 +476,13 @@ g = igraph::graph_from_edgelist(as.matrix(el_[,1:2]),directed = T)
 #                      edge.attr.comb = igraph_opt("edge.attr.comb"))
 el_act = data.frame(get.edgelist(g))
 el_act$Ratio = paste0(el_act$X1,"___",el_act$X2)
-el_act = left_join(el_act,imp.df)
+el_act = left_join(el_act,keyRats)
 col = if_else(el_act$raw>0,ggsci::pal_lancet(alpha = .7)(2)[1],ggsci::pal_lancet(alpha = .7)(2)[2])
+E(g)$weight = el_act$Imp
 
 vertices = data.frame(Part = V(g)$name)
 vertices = left_join(vertices,weights.df)
-v_color = if_else(vertices$Coef>0,ggsci::pal_lancet(alpha = .5)(2)[2],ggsci::pal_lancet(alpha = .5)(2)[1])
+v_color = if_else(vertices$Coef>0,ggsci::pal_lancet(alpha = 1)(2)[2],ggsci::pal_lancet(alpha = 1)(2)[1])
 
 
 
@@ -526,19 +517,159 @@ ggplot(weights.df,aes(reorder(Part,Coef),Coef,fill = col))+
 
 ## Visulaize Log Ratio Network of GLM Coeff
 ## Can think of as a microbial network
-pdf(file = "Figures/caseStudy_NEC_lrnet.pdf",width = 5 ,height = 5)
+pdf(file = "Figures/caseStudy_NEC_lrnet.pdf",width = 3 ,height = 3)
 par(mar=c(0,0,0,0)+.1)
 plot(g,
      vertex.color = v_color,#rep(ggsci::pal_lancet(alpha = .75)(9)[8],vcount(g)),
-     layout = igraph::layout.kamada.kawai,
+     layout = igraph::layout_with_dh,
      vertex.frame.color = "white",
-     vertex.label.cex = .5,
+     vertex.label.cex = .65,
      vertex.label.color = "black",
-     edge.color  =col,
-     edge.width = 125*el_act$Imp ,
-     vertex.size = abs(vertices$Coef) *150+5,
+     vertex.label.dist=1.2, vertex.label.degree=-pi/2,
+    # edge.color  =col,
+     edge.width = 12*el_act$Imp ,
+     vertex.size = abs(vertices$Coef) *30+5,
      #edge.curved = .2,
-     edge.arrow.size = 1)
+     edge.arrow.size = .57)
+dev.off()
+
+
+
+
+# Train
+pc = prcomp(fts)
+pc.df = data.frame(Status =y_labels,pc$x)
+tiff(file = "Figures/pca_train_5feature_woKeppra.tiff",width = 3 ,height = 3,res = 300,units = "in")
+ggplot(pc.df,aes(PC2,PC3,col = Status))+
+  geom_point(size =2)+
+  theme_bw()+
+  ggsci::scale_color_lancet()+
+  theme(legend.position = "top",panel.grid = element_blank(),
+        plot.title = element_text(size = 8,hjust = .5,face = "bold"),
+        #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
+        axis.title = element_text(size = 8,face = "bold"),
+        #axis.title.y = element_blank(),
+        #axis.title.x = element_text(size = 8,face = "bold"),
+        #axis.text.y = element_text(size = 7),
+        #axis.text.y = element_blank(),
+        #legend.margin=margin(-1,-1,-1,-1),
+        strip.switch.pad.wrap = margin(0,0,0,0),
+        legend.margin=margin(-5,-10,-10,-10),
+        axis.text = element_text(size = 8),
+        #panel.grid = element_blank(),
+        legend.key.size = unit(.15,units = "in"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank(),
+        #legend.background = element_rect(colour = "black")+
+
+  )
+dev.off()
+
+
+
+
+
+
+
+## boxplot
+library(ggsignif)
+
+ratio_names = unique(keyRats$Ratio)
+fts = DiCoVarML::getLogratioFromList(ratio_names,trainx,"test")
+bp = data.frame(ID = 1:nrow(fts),Status = y_labels,fts)
+bp  =gather(bp,"Ratio","Value",3:ncol(bp))
+bp$Ratio = str_replace_all(bp$Ratio,"___",replacement = "/")
+bp = separate(bp,col = Ratio,into = c("num","denom"),remove = F)
+bp$ratio_name = paste0("frac(",bp$num, ",", bp$denom,")")
+
+px = list()
+for(x in 1:ncol(fts)){
+  px[[x]] = c("No", "Yes")
+}
+
+
+stat.test <- compare_means(
+   Value~Status,
+   data = bp,
+   group.by = "Ratio",
+  method = "wilcox.test",
+  p.adjust.method = "BH"
+)
+
+
+pdf(file =  "Figures/boxplot_NEC.pdf",width = 7.5,height = 2.5)
+ggplot(bp,aes(Status,Value,fill = Status))+
+  geom_boxplot(outlier.shape = NA,alpha = .7)+
+  facet_wrap(.~ratio_name,labeller = label_parsed,nrow = 2)+
+  theme_bw()+
+  ggsci::scale_fill_lancet()+
+  ggsci::scale_color_lancet()+
+  scale_y_continuous(limits =c(-15,18) )+
+  geom_jitter(width = .07,alpha = .1,size = 1)+
+  labs(fill='NEC') +
+  stat_compare_means(method = "wilcox.test",comparisons = list(c("Yes","No")),label = "p.signif",vjust = .5)+
+  theme(legend.position = "top",panel.grid = element_blank(),
+        plot.title = element_text(size = 8,hjust = .5,face = "bold"),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 6,face = "bold"),
+        #plot.margin = margin(0.5, 0.5, 0.5, 0.5),
+        #axis.title = element_text(size = 12),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 8,face = "bold"),
+        #axis.text.y = element_text(size = 7),
+        axis.text.x = element_blank(),
+        #legend.margin=margin(-1,-1,-1,-1),
+        strip.switch.pad.wrap = margin(0,0,0,0),
+        legend.margin=margin(-5,-10,-10,-10),
+        axis.text = element_text(size = 8),
+        #panel.grid = element_blank(),
+        legend.key.size = unit(.15,units = "in"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        #legend.background = element_rect(colour = "black")+
+
+  )
+dev.off()
+
+
+
+
+
+
+### Presenstization Heatmap PreProcess #####
+keepRatios = data.frame(Group = y_labels,fts)
+ncolors = n_distinct(keepRatios[,1])
+colors = c(ggsci::pal_lancet(alpha = .6)(2)[2],ggsci::pal_lancet(alpha = .6)(2)[1])
+color.df = data.frame(Color = colors,
+                      Group = as.character(unique(keepRatios[,1])))
+color.df = left_join(keepRatios,color.df)
+mat = as.matrix((keepRatios[,-1]))
+col <- colorRampPalette(RColorBrewer::brewer.pal(10, "PRGn"))(1000)
+col <- colorRampPalette(RColorBrewer::brewer.pal(10, "PRGn")[10:1])(1000)
+mat = t(mat)
+sc = color.df$Color
+# heatmap microbiome composition
+tiff(filename = "Figures/Heatmap_5feat.tiff",width = 5,height = 4,units = "in",res = 300)
+gplots::heatmap.2( mat,
+                   col = col,#viridis::viridis(n = 1000,direction = -1,option = "D"),#gplots::redblue(n = 1000) ,#viridis::viridis(n = 1000,option = "D"),#,
+                   Rowv = TRUE,keysize = 2,
+                   margins = c(2, 10), labCol = FALSE,labRow = rownames(mat),
+                   hclustfun = function(x) hclust(x, method = "ward.D2"),
+                   distfun = function(x) parallelDist::parallelDist(x,method = "euclidean"),
+                   key=TRUE, symkey=TRUE,
+                   scale = "none",
+                   #sepwidth=c(0.01,0.01),
+                   #sepcolor="black",
+                   #colsep=1:ncol(mat),rowsep=1:nrow(mat),
+                   density.info="density", trace="none",
+                   ColSideColors = sc,xlab = 'Sample',ylab = "Log-ratio",
+                   #main = "Presensitization Gut Mircobiome",
+                   #colCol = "white",
+                   key.title = "Log-ratio",
+                   #RowSideColors = cc,
+                   cexRow = 0.75,cexCol = .75
+
+)
 dev.off()
 
 
@@ -552,6 +683,54 @@ dev.off()
 
 
 
+
+
+### compare meta data to score
+## Pre-Process Metadata
+
+
+mm.char = md1 %>%
+  select(Sex,
+         Chorioamnionitis,
+         Maternal.antepartum.antibiotics.administered,
+         Baby.s.delivery.mode,
+         Born.stunted,
+         Host.diet)
+
+## convert variables to factors
+newdata.train <- mm.char %>% mutate_if(is.character,as.factor)
+
+xx = lm(GLM_Score~.,data = p.df )
+summary(xx)
+av = anova(xx)
+av$`Pr(>F)`
+p.df = data.frame(GLM_Score = as.numeric(p),newdata.train)
+
+av$`Pr(>F)`
+av$`F value`
+
+# ##-----------------------------
+# ## Add covairate
+# # ## one hot features
+# dummy <- dummyVars(" ~ .", data=rbind(mm.char,mm.char.test))
+# newdata <- data.frame(predict(dummy, newdata = rbind(mm.char,mm.char.test)))
+# newdata.train = newdata[1:nrow(mm.char),]
+# newdata.test =  newdata[-1:-nrow(mm.char),]
+
+
+## cont features
+train_metadata = data.frame(Age = train.md$Age.at.sample.collection..days.
+                            #gesAge = train.md$Gestational.age.at.birth..days.,
+                            #host_weight = train.md$Host.weight..g.,
+                            #newdata.train
+)
+
+
+test.metadata = data.frame(Age = test.md$Age.at.sample.collection..days.
+                           #gesAge = test.md$Gestational.age.at.birth..days.,
+                           #host_weight = test.md$Host.weight..g.,
+                           #newdata.test
+)
 
 
 
@@ -849,4 +1028,9 @@ dev.off()
 #   coord_flip()+
 #   theme_bw()
 #
-#
+
+
+
+
+
+

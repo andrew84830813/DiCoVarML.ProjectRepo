@@ -1,4 +1,4 @@
-
+##
 
 fnames = dir("Results/NEC_caseStudy/")
 
@@ -41,31 +41,37 @@ ggplot(results1,aes(Diff))+
   geom_vline(xintercept = mean(results1$Diff),col = "red",lty = "dotdash",size = 1)+
   geom_vline(xintercept = mean(results1$Diff) + (1.96*sd(results1$Diff))/10,col = "red",lty = "dashed",size = 1)+
 geom_vline(xintercept = mean(results1$Diff) - (1.96*sd(results1$Diff))/10,col = "red",lty = "dashed",size = 1)
+
 wilcox.test(results1$Empirical,results1$Permuted,paired = T,alternative = "greater")
+
+results1 = results %>%
+  group_by(Scenario,Approach,Seed) %>%
+  summarise(AUC = mean(AUC))
+
 
 
 library(ggsignif)
 
 pdf(file = "Figures/caseStudy_NEC_glmAUC.pdf",width = 2.5 ,height = 3)
-ggplot(results,aes(Scenario,AUC,fill = Scenario,label =AUC))+
+ggplot(results1,aes(Scenario,AUC,fill = Scenario,label =AUC))+
   theme_bw()+
   facet_grid(.~Approach)+
-  geom_line(aes(group = seed_fold),col = "gray",alpha = .35)+
+  geom_line(aes(group = Seed),col = "gray",alpha = .35)+
   geom_boxplot(alpha = .5,width = .4,outlier.color = NA)+
   scale_color_manual(values = ggsci::pal_lancet()(6)[5:6])+
   scale_fill_manual(values = ggsci::pal_lancet()(6)[5:6])+
-  stat_summary(fun = "mean",
-               geom = "crossbar",
-               width = 0.35,
-               colour = "black")+
+  # stat_summary(fun = "mean",
+  #              geom = "crossbar",
+  #              width = 0.35,
+  #              colour = "black")+
   geom_point(aes(col = Scenario),alpha = .25,shape = 1,size = 3)+
-  geom_signif(comparisons = list(c("Permuted", "Empirical")),tip_length = 0,
+  geom_signif(comparisons = list(c( "Empirical","Permuted")),tip_length = 0,
               map_signif_level=F,test = "wilcox.test",
-              test.args = list(paired = T)
+              test.args = list(paired = T,direction = "greater")
   )+
-  stat_summary(fun.y = mean, geom = "point",col = "red",size = 2)+
+  #stat_summary(fun.y = mean, geom = "point",col = "red",size = 2)+
   stat_summary(fun.data = n_fun, geom = "text",size = 4,position = position_nudge(x = .4))+
-  stat_summary(fun.data = mean_cl_normal,geom = "errorbar",width = .125)+
+  #stat_summary(fun.data = mean_cl_normal,geom = "errorbar",width = .125)+
   xlab("Training Label Distribution")+
   theme(legend.position = "none",
         strip.background = element_blank(),
@@ -83,6 +89,34 @@ ggplot(results,aes(Scenario,AUC,fill = Scenario,label =AUC))+
 dev.off()
 
 
+
+
+
+results2 = results1 %>%
+  dplyr::select(Approach,Seed,Scenario,AUC) %>%
+  spread("Scenario","AUC") %>%
+  mutate(Diff = Empirical-Permuted)
+
+wilcox.test(results2$Empirical,results2$Permuted,paired = T,alternative = "greater")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## compute wilcox test
 results1 = results %>%
   select(seed_fold,Scenario,AUC) %>%
@@ -97,6 +131,5 @@ dd = results %>%
   rstatix::adjust_pvalue(method = "BH") %>%
   rstatix::add_significance("p.adj") %>%
   dplyr::arrange(dplyr::desc(-p))
-
 
 

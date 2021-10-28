@@ -195,7 +195,7 @@ cc.dcv = diffCompVarRcpp::dcvScores(logRatioMatrix = lrs.train,
 
 ## Apply targted feature selection method
 tar_Features = inner_perf2$tar_Features[which.max(inner_perf2$AUC)]
-#tar_Features = 50
+tar_Features = 50
 
 tar_dcv = targeted_dcvSelection(trainx = trainx,
                                 minConnected = min_connected,
@@ -225,19 +225,44 @@ load("Output/caseStudy_CRC_finalModel_top50.Rda")
 
 library(ggsignif)
 
+
 ##Retrieve Coeff
-cof = coef(tar_dcv$glm_model$mdl)
-cc = tar_dcv$ridge_coefficients
+td = tar_dcv$weighted_features$train
+tst = tar_dcv$weighted_features$test
+
+
+# ## Train Model
+ph = trainML_Models(trainLRs = td,
+                    testLRs = tst,
+                    ytrain = y_labels,
+                    y_test = y_labels,ranger_imp = "impurity",
+                    testIDs = data.frame(ID= 1:nrow(td),Status = y_labels),
+                    models = ensemble)
+
+# ## Compute Performance
+# geo.mean = function(x){
+#   exp(mean(log(x)))
+# }
+## get predictions
+pmat = tar_dcv$all_model_preds
+pmat = pmat %>%
+  group_by(ID,Status) %>%
+  dplyr::select(-model) %>%
+  summarise_all(.funs = mean)
+pmat = data.frame(pmat)
+mroc = pROC::multiclass.roc(pmat$Status,pmat[,classes]);mroc
+
+
 sample_id = rownames(df)
-p = stats::predict(tar_dcv$glm_model$mdl, newx = as.matrix(tar_dcv$glm_model$data$train), s = "lambda.min",type = "lin")
-p.df = data.frame(CRC = y_labels,GLM_Score = as.numeric(p),Sample_ID = sample_id)
+p = log(pmat$CRC/ (1-pmat$CRC))
+p.df = data.frame(CRC = y_labels,GLM_Score = p,Sample_ID = sample_id)
 
 
 ## Visualize Overall Scores Between Groups
 pdf(file = "Figures/caseStudy_CRC_scores.pdf",width = 2.5 ,height = 2.2)
-ggplot(p.df,aes(CRC,GLM_Score-cof[1],fill = CRC))+
+ggplot(p.df,aes(CRC,GLM_Score,fill = CRC))+
   geom_boxplot(alpha = .7,outlier.color = NA)+
-  #geom_jitter(aes(col  = CRC),width = .05,alpha = .5)+
+  geom_jitter(aes(col  = CRC),width = .05,alpha = .5)+
   ggsci::scale_fill_lancet()+
   ggsci::scale_color_lancet()+
   ylab("Logistics Regression Score")+
@@ -264,6 +289,77 @@ ggplot(p.df,aes(CRC,GLM_Score-cof[1],fill = CRC))+
 
   )
 dev.off()
+
+
+
+td1 = data.frame(Status = as.numeric(as.factor(y_labels)),td)
+cv <- cv.glmnet(as.matrix(td1), p, alpha = 0,scale = T)
+# rf =  randomForest::randomForest(x = td,y = p,importance = T)
+# im = rf$importance
+# Fit the final model on the training data
+model <- glmnet(as.matrix(td1), p, alpha = 0, lambda = cv$lambda.min,scale = T)
+# Display regression coefficients
+cf = as.matrix(coef(model))
+ft = stats::predict(model, newx = as.matrix(td1), s = "lambda.min",type = "response")
+plot(p,ft)
+imp.df = data.frame(Ratio = names(cf[-1,1]),Coef = as.numeric(cf[-1,1]))
+mdl = lm(p~ft)
+summary(mdl)
+
+
+## Process Weights and construct log ratio network
+library(igraph)
+imp.df = data.frame(Ratio = names(cf[-2:-1,1]),Imp = abs(as.numeric(cf[-2:-1,1])),raw = as.numeric(cf[-2:-1,1]))
+
+keyRats = tidyr::separate(imp.df,1,into = c("Num","Denom"),sep = "___",remove = F)
+
+
+## stack ratio for consistent interpretation
+keyRats2 = keyRats
+keyRats2$Num = keyRats$Denom
+keyRats2$Denom= keyRats$Num
+keyRats2$Ratio= paste0(keyRats$Denom,"___",keyRats$Num)
+keyRats2$raw = -keyRats$raw
+keyRats2 = rbind(keyRats,keyRats2)
+### keep negative egdes (more abundance more likely non sever outcome)
+keyRats = keyRats2 %>%
+  filter(raw>0)
+
+
+
+## Define weight such that:  weight * log(a/b) = weight * log(a) - weight * log(b)
+weights.df = data.frame(Part = keyRats$Num,Coef = keyRats$raw)
+weights.df = rbind(weights.df,data.frame(Part = keyRats$Denom,Coef = -1*keyRats$raw))
+weights.df = weights.df %>%
+  group_by(Part) %>%
+  summarise_all(.funs = sum)
+weights.df$col = if_else(weights.df$Coef>0,"CRC","Control")
+weights.df$col = factor(weights.df$col,levels = c("Control","CRC"))
+
+library(igraph)
+el_= data.frame(keyRats$Num,keyRats$Denom,keyRats$Ratio)
+g = igraph::graph_from_edgelist(as.matrix(el_[,1:2]),directed = T)
+g = igraph::simplify(g, remove.loops = TRUE,
+                     edge.attr.comb = igraph_opt("edge.attr.comb"))
+el_act = data.frame(get.edgelist(g))
+el_act$Ratio = paste0(el_act$X1,"___",el_act$X2)
+el_act = left_join(el_act,imp.df)
+
+
+vertices = data.frame(Part = V(g)$name,Label =  V(g)$name)
+vertices = left_join(vertices,weights.df)
+v_color = if_else(vertices$Coef>0,ggsci::pal_lancet(alpha = .9)(2)[2],ggsci::pal_lancet(alpha = .9)(2)[1])
+vertices$abs_coef = abs(vertices$Coef)
+
+el_act = data.frame(get.edgelist(g))
+el_act$Ratio = paste0(el_act$X1,"___",el_act$X2)
+el_act = left_join(el_act,imp.df)
+col = if_else(el_act$raw>0,ggsci::pal_lancet(alpha = .2)(2)[1],ggsci::pal_lancet(alpha = .2)(2)[2])
+el_act$col = col
+
+
+E(g)$weight = el_act$Imp
+toGephi(Graph = g,Name = "CRC_net",attribute_metadata = vertices,edge_metadata = el_act)
 
 
 
@@ -308,7 +404,7 @@ clin_md = clin_md %>%
 stage = data.frame(ajcc = unique(clin_md$ajcc),cStage = c("SIII/IV","SI/II","SIII/IV","SI/II","S0"))
 clin_md = left_join(clin_md,stage)
 clin_md$cStage = factor(clin_md$cStage)
-clin_md$Score = clin_md$GLM_Score - cof[1]
+clin_md$Score = clin_md$GLM_Score
 table(clin_md$cStage)
 
 ## Linear Model
@@ -316,8 +412,8 @@ md = lm(Score~cStage,data = clin_md)
 sm  = (anova(md))
 
 pdf(file = "Figures/caseStudy_CRC_clinOutcome.pdf",width = 2.5 ,height = 2.2)
-ggplot(clin_md,aes(cStage,GLM_Score-cof[1]))+
-  geom_boxplot(alpha = .7)+
+ggplot(clin_md,aes(cStage,GLM_Score))+
+  geom_boxplot(alpha = .7,fill  =ggsci::pal_lancet(alpha = .7)(2)[2])+
   #geom_jitter(aes(col  = NEC),width = .1,alpha = .9)+
   ggsci::scale_fill_lancet()+
   ggsci::scale_color_lancet()+
@@ -360,7 +456,7 @@ load("Output/CRC_exp/curatedMetaGenome_YuJ_2015.Rda")
 clin_md = expResults$metadata
 mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col = clin_md$sampleID)))
 clin_md$sampleID = colnames(mt)
-clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
+clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p))),clin_md)
 clin_md = clin_md %>%
   filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
@@ -373,7 +469,7 @@ clin_md = expResults$metadata
 mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col = clin_md$sampleID)))
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
-clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
+clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p))),clin_md)
 clin_md = clin_md %>%
   filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
@@ -385,7 +481,7 @@ clin_md = expResults$metadata
 mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col = clin_md$sampleID)))
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
-clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
+clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p))),clin_md)
 clin_md = clin_md %>%
   filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
@@ -397,7 +493,7 @@ clin_md = expResults$metadata
 mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col = clin_md$sampleID)))
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
-clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
+clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p))),clin_md)
 clin_md = clin_md %>%
   filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
@@ -410,7 +506,7 @@ clin_md = expResults$metadata
 mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col = clin_md$sampleID)))
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
-clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
+clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p))),clin_md)
 clin_md = clin_md %>%
   filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
@@ -423,7 +519,7 @@ clin_md = expResults$metadata
 mt = data.frame(matrix(nrow = 1,ncol = nrow(clin_md),dimnames = list(row = 1,col = clin_md$sampleID)))
 colnames(clin_md)
 clin_md$sampleID = colnames(mt)
-clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p)-cof[1])),clin_md)
+clin_md = inner_join(data.frame(data.frame(sampleID = sample_id,CRC = y_labels,GLM_Score = as.numeric(p))),clin_md)
 clin_md = clin_md %>%
   filter(!is.na(tnm))
 stage = stringr::str_extract((clin_md$tnm), "^.{2}")
@@ -441,13 +537,16 @@ stage_data = stage_data %>%
 
 
 ## Linear Model
+stage_data$Score = stage_data$Score
 table(stage_data$stage)
+stage_data$stage = factor(stage_data$stage)
 md = lm(Score~stage,data = stage_data)
+summary(md)
 sm = (anova(md))
 
 pdf(file = "Figures/caseStudy_CRC_clinOutcomeAllData.pdf",width = 2.5 ,height = 2.2)
 ggplot(stage_data,aes(stage,Score))+
-  geom_boxplot(alpha = .7)+
+  geom_boxplot(alpha = .7,fill  =ggsci::pal_lancet(alpha = .7)(2)[2])+
   #geom_jitter(aes(col  = NEC),width = .1,alpha = .9)+
   ggsci::scale_fill_lancet()+
   ggsci::scale_color_lancet()+
@@ -519,10 +618,10 @@ el_act = left_join(el_act,imp.df)
 col = if_else(el_act$raw>0,ggsci::pal_lancet(alpha = .2)(2)[2],ggsci::pal_lancet(alpha = .2)(2)[1])
 el_act$col = col
 
-
-#E(g)$weight = el_act$Imp
-#toGephi(Graph = g,Name = "CRC_opt",attribute_metadata = vertices,edge_metadata = el_act)
-
+#
+# E(g)$weight = el_act$Imp
+# toGephi(Graph = g,Name = "CRC_opt",attribute_metadata = vertices,edge_metadata = el_act)
+#
 
 ## Visualize Net Contribution of Parts to Score
 pdf(file = "Figures/caseStudy_CRC_feat_contrib.pdf",width = 6 ,height = 7.5)
@@ -562,15 +661,15 @@ pdf(file = "Figures/caseStudy_CRC_lrnet.pdf",width = 5 ,height = 5)
 par(mar=c(0,0,0,0)+.1)
 plot(g,
      vertex.color = v_color,#rep(ggsci::pal_lancet(alpha = .75)(9)[8],vcount(g)),
-     layout = igraph::layout.kamada.kawai,
+     layout = igraph::layout.fruchterman.reingold,
      vertex.frame.color = "white",vertex.frame.width = .5,
-     vertex.label.cex = .4,
+     vertex.label.cex = .75,
      vertex.label.color = "black",
      edge.color  =col,
-     edge.width = 125*el_act$Imp ,
-     vertex.size = abs(vertices$Coef) * 15+2,
+     edge.width = 1*el_act$Imp ,
+     vertex.size = abs(vertices$Coef) *1.1 +2,
      edge.curved = .2,
-     edge.arrow.size = .51)
+     edge.arrow.size = .1)
 dev.off()
 
 
