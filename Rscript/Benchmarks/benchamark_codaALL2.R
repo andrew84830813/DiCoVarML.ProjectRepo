@@ -561,7 +561,7 @@ for(f in 1:k_fold){
                             testIDs = ttData$test_ids,
                             ytrain = ttData$y_train,
                             y_test = ttData$y_test,
-                            models = ensemble,
+                            models = "glmnet",
                             cvMethod = "repeatedcv"
     )
     train.all.PLR = m1.plr$performance
@@ -573,32 +573,41 @@ for(f in 1:k_fold){
     pmat = data.frame(pmat)
     mroc.all.PLR = pROC::multiclass.roc(pmat$Status,pmat[,classes])
 
+    vi = varImp(m1.plr$models[[1]])
+    vi  = data.frame(vi$importance)
+    vi = vi %>%
+      filter(Overall>0)
+
 
     #Write Results
     perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
-                      Dataset = f_name,Seed = sd,Fold = f,Approach = "ALR-Full",AUC = as.numeric(pROC::auc(mroc.all.PLR)),
+                      Dataset = f_name,Seed = sd,Fold = f,Approach = "ALR-GLMNET",AUC = as.numeric(pROC::auc(mroc.all.PLR)),
                       train_auc = NA,
-                      number_parts = ncol(trainx)+1,number_ratios = ncol(trainx),comp_time = compTime[3],
+                      number_parts = nrow(vi)+1,number_ratios = nrow(vi),comp_time = compTime[3],
                       base_dims = ncol(train.data)
     )
     benchmark = rbind(benchmark,perf)
 
 
     compTime2 = system.time({
-      cv.clrlasso <- glmnet::cv.glmnet(as.matrix(trainx),yt, standardize=T, alpha=1,family="binomial",type = "auc")
-      cv.clrlasso$cvm
+      cv.clrlasso <- glmnet::cv.glmnet(as.matrix(trainx),yt, standardize=T, alpha=1,family="binomial")
+      # cv.clrlasso$cvm
       features = as.matrix(coef(cv.clrlasso, s = "lambda.min"))
       features = features[-1,]
       features = features[abs(features)>0]
-      trainx = subset(trainx,select = names(features))
-      testx = (subset(testx,select = names(features)))
+      # trainx = subset(trainx,select = names(features))
+      # testx = (subset(testx,select = names(features)))
   })
 
-    ## compute AUC
-    glm.test = data.frame(Status = yt,trainx)
-    cv.clrlasso <-glm(formula = Status~.,data = glm.test,family = binomial)
-    p = predict.glm(cv.clrlasso, newdata = data.frame(testx), type = "response")
+    glm.test = data.frame(Status = ttData$y_test,testx)
+    p = stats::predict(cv.clrlasso, newx = as.matrix(testx), s = "lambda.min",type = "response")
     mroc.glm.alr = pROC::roc(ttData$y_test,p)
+
+
+    # ## compute AUC
+    # glm.test = data.frame(Status = yt,trainx)
+    # cv.clrlasso <-glm(formula = Status~.,data = glm.test,family = binomial)
+    # p = predict.glm(cv.clrlasso, newdata = data.frame(testx), type = "response")
 
   #Write Results
   perf = data.frame(Scenario = if_else(permute_labels,"Permuted","Empirical"),
@@ -614,7 +623,7 @@ for(f in 1:k_fold){
   # DCV --------------------------------------------------------------
 
   perc_totalParts2Keep = .75
-  num_sets = 5
+  num_sets = 6
 
   base_dims = ncol(ttData$train_Data)
   max_parts = round(perc_totalParts2Keep*base_dims)

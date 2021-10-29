@@ -1,0 +1,12 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,train_auc,number_parts,number_ratios,comp_time,base_dims
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_aloneRFE,0.5901845637583892,NA,6,5,NA,35
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_dataGLM,0.6132550335570469,NA,17,16,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_rfeglmnet4,0.4979026845637584,0.8382799241289808,26,136,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_rfepls2,0.5394295302013423,0.823293179372844,26,136,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_rferanger1,0.5782298657718121,0.9152019344891462,26,136,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_rferangerE5,0.608011744966443,0.9293434494692356,26,136,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_rfesvmRadial3,0.6220637583892618,0.8699555200603418,26,136,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_rfeDCV-ridgeRegression,0.48783557046979864,0.8330948498663384,26,136,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_rfeDCV-ridgeEnsemble,0.45176174496644295,0.9161397845884219,26,136,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,meta_rfeDCV,0.608011744966443,0.9293434494692356,26,136,NA,16
+Empirical,NEC_seed1_permuteFALSE_fold4,1,4,mbiome + meta_data_rfRFE,0.34186241610738255,NA,26,58,NA,58
