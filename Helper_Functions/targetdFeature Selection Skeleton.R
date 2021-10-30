@@ -34,7 +34,7 @@ targeted_dcvSelection = function(trainx,
                                  dcv=NULL,lrs.train=NULL,lrs.test = NULL,minConnected = F,
                                  ensemble  = c("ranger","pls","svmRadial","glmnet","rangerE"), tarFeatures = 5,
                                  imp_factor = 1e-7,
-                                 select_randomFeatures = F,use_rfe = T,
+                                 select_randomFeatures = F,use_rfe = T,alpha_ = 0,
                                  ts.id,seed = 08272008,max_sparsity = .9,useRidgeWeights=T,scaledata = T){
 
   result = data.frame()
@@ -161,7 +161,7 @@ targeted_dcvSelection = function(trainx,
 
     type_family = dplyr::if_else(length(classes)>2,"multinomial","binomial")
     compTime2 = system.time({
-      cv.clrlasso <- glmnet::cv.glmnet(as.matrix(glm.train),y_label, standardize=F, alpha=0,family=type_family)
+      cv.clrlasso <- glmnet::cv.glmnet(as.matrix(glm.train),y_label, standardize=F, alpha=alpha_,family=type_family)
     })
     if(type_family=="binomial"){
       features = as.matrix(coef(cv.clrlasso, s = "lambda.min"))
