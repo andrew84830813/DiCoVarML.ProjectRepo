@@ -1,0 +1,9 @@
+Scenario,Dataset,Seed,Fold,Approach,AUC,train_auc,number_parts,number_ratios,comp_time,base_dims,feat_set,permuteLabel,shift_parm,sparsity
+Empirical,16S_meanShift1_permuteFALSE_seed1_sparsity5,1,2,ALR/PLR_glmnet4,0.5524,0.6976,10,18,11.05000000000291,124,1,FALSE,1,0.95
+Empirical,16S_meanShift1_permuteFALSE_seed1_sparsity5,1,2,ALR/PLR_pls2,0.5436,0.6952,10,18,11.05000000000291,124,1,FALSE,1,0.95
+Empirical,16S_meanShift1_permuteFALSE_seed1_sparsity5,1,2,ALR/PLR_ranger1,0.5576,0.716,10,18,11.05000000000291,124,1,FALSE,1,0.95
+Empirical,16S_meanShift1_permuteFALSE_seed1_sparsity5,1,2,ALR/PLR_rangerE5,0.5688,0.7108,10,18,11.05000000000291,124,1,FALSE,1,0.95
+Empirical,16S_meanShift1_permuteFALSE_seed1_sparsity5,1,2,ALR/PLR_svmRadial3,0.5768,0.7048000000000001,10,18,11.05000000000291,124,1,FALSE,1,0.95
+Empirical,16S_meanShift1_permuteFALSE_seed1_sparsity5,1,2,ALR/PLR_DCV-ridgeRegression,0.5508,0.7048,10,18,11.05000000000291,124,1,FALSE,1,0.95
+Empirical,16S_meanShift1_permuteFALSE_seed1_sparsity5,1,2,ALR/PLR_DCV-ridgeEnsemble,0.442,0.2872,10,18,11.05000000000291,124,1,FALSE,1,0.95
+Empirical,16S_meanShift1_permuteFALSE_seed1_sparsity5,1,2,ALR/PLR_ALR/PLR_DCV,0.5508,0.7048,10,18,11.05000000000291,124,1,FALSE,1,0.95
