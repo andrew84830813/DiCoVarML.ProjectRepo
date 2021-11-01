@@ -100,12 +100,16 @@ useRidgeWeight = F
 min_connected = F
 ensemble = c("ranger","xgbTree","xgbLinear")
 ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
+lasso_alpha = 0
 
 
   set.seed(seed_)
   k_fold = 2
   overll_folds = caret::createFolds(df[,1],k =k_fold,list = F)
   allData = lodo_partition(df,dataset_labels = overll_folds,sd)
+
+
+  message("\n",f_name,"\n")
 
   message("\n\n``````` Start Seed:  ",sd,"````````````\n\n")
 
@@ -143,7 +147,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
 
       ## discover features
       bv = selbal::selbal.aux(x = xt, y = yt,zero.rep = "one")
-      if(nrow(bv)==0){
+      if(nrow(bv)<=1){
         bv = data.frame(Taxa = colnames(train.data))
       }
       nparts = length(bv$Taxa)
@@ -224,7 +228,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
       }
 
 
-      if(length(features)==0){
+      if(length(features)<=1){
         features= rep(0,ncol(train.data))
         names(features) =colnames(train.data)
       }
@@ -345,7 +349,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
         HFHS.results_codalasso <- coda_logistic_lasso(ytr,(xt),lambda=devexp$lambda[1])
         features = HFHS.results_codalasso$`name of selected variables`
 
-        if(length(features)==0){
+        if(length(features)<=1){
           features = colnames(train.data)
         }
         nparts = length(features)
@@ -556,7 +560,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
                                           includeInfoGain = T, nfolds = 1, numRepeats = 1,
                                           rankOrder = F)
       tar_Features = train_auc2$targetFeatures[which.max(train_auc2$train_auc)]
-      tar_dcv = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,alpha_ = lasso_alpha,
+      tar_dcv = targeted_dcvSelection(trainx = trainx,minConnected = min_connected,
                                       useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
                                       testx = testx,
                                       dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
@@ -598,7 +602,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
                       AUC = pmat$auc,train_auc = pmat$train_auc,
                       number_parts = nparts,number_ratios = length(cn) ,comp_time = compTime2[3],
                       base_dims = ncol(train.data))
-    perf$feat_set =tarfeatureSet
+
 
     benchmark = rbind(benchmark,perf)
 
@@ -750,7 +754,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
                                           includeInfoGain = T, nfolds = 1, numRepeats = 1,
                                           rankOrder = F)
       tar_Features = train_auc2$targetFeatures[which.max(train_auc2$train_auc)]
-      tar_dcv = targeted_dcvSelection.alr(trainx = trainx,minConnected = min_connected,alpha_ = lasso_alpha,
+      tar_dcv = targeted_dcvSelection.alr(trainx = trainx,minConnected = min_connected,
                                           useRidgeWeights = useRidgeWeight,use_rfe = performRFE,scaledata = scale_data,
                                           testx = testx,
                                           dcv = cc.dcv$lrs,lrs.train = lrs.train,lrs.test = lrs.test,
@@ -790,7 +794,6 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
                       AUC = pmat$auc,train_auc = pmat$train_auc,
                       number_parts = nparts,number_ratios = length(cn) ,comp_time = compTime2[3],
                       base_dims = ncol(train.data))
-    perf$feat_set =tarfeatureSet
 
     benchmark = rbind(benchmark,perf)
 
@@ -965,16 +968,7 @@ ensemble = c("ranger","pls","svmRadial","glmnet","rangerE")
                       AUC = pmat$auc,train_auc = pmat$train_auc,
                       number_parts = nparts,number_ratios = length(cn) ,comp_time = compTime2[3],
                       base_dims = ncol(train.data))
-    perf$feat_set =tarfeatureSet
     benchmark = rbind(benchmark,perf)
-
-
-
-
-
-
-
-
   }
 
 benchmark$permuteLabel = permute_labels

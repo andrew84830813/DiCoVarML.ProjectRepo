@@ -12,6 +12,7 @@ library(tidyr)
 library(stringr)
 library(glmnet) # glmnet
 library(selbal) # selbal
+library(easyCODA)
 
 
 
@@ -38,7 +39,7 @@ source(file = 'CODA_Functions/functions_coda_penalized_regression.R')
 
 # Read External Args ---------------------------------------------------------------
 
-args = c(2,1,2,0)
+args = c(4,1,2,0)
 args = commandArgs(trailingOnly = TRUE)
 sd = as.numeric(args[1]) # random seed selection
 dataset = as.numeric(args[2])
@@ -210,7 +211,21 @@ lasso_alpha = 0 # normally lasso_alpha = 0
 ## Define Sets
 perc_totalParts2Keep = .75
 num_sets = 8
-base_dims = ncol(df)
+got = DiCoVarML::extractTrainTestSplit(foldDataList = allData,
+                                          fold = 1,
+                                          permLabels = permute_labels,
+                                          maxSparisty = .9,
+                                          extractTelAbunance = F)
+##get train test partitions
+got1 = got$train_Data
+got = DiCoVarML::extractTrainTestSplit(foldDataList = allData,
+                                       fold = 2,
+                                       permLabels = permute_labels,
+                                       maxSparisty = .9,
+                                       extractTelAbunance = F)
+##get train test partitions
+got2 = got$train_Data
+base_dims = min(c(ncol(got1),ncol(got2)))
 max_parts = round(perc_totalParts2Keep*base_dims)
 sets = unique(round(seq(5,max_parts,length.out = num_sets)))
 
